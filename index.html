@@ -1,0 +1,1861 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Market Breadth Strategy Engine v2.1 (Global Macro)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Quant Engine focused on Market Breadth Analysis & Regime Filtering">
+
+<!-- ================= LIBRARIES ================= -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Sarabun','sans-serif'],
+        mono: ['JetBrains Mono','monospace']
+      },
+      colors: {
+        brand: { 500:'#8B5CF6', 600:'#7C3AED', 400:'#A78BFA' }, // Purple Theme for Breadth
+        stock: { 500:'#3b82f6', 600:'#2563eb', 400:'#60a5fa' },
+        dark: { 900:'#0F172A', 800:'#1E293B', 700:'#334155', 600:'#475569' },
+        acc: { green:'#10B981', red:'#EF4444', blue:'#3b82f6', orange: '#F59E0B' }
+      }
+    }
+  }
+}
+</script>
+
+<style>
+body { transition: background-color .3s, color .3s; }
+.glass {
+  background: rgba(255,255,255,.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0,0,0,.05);
+}
+.dark .glass {
+  background: rgba(30,41,59,.95);
+  border-color: #334155;
+}
+.mono { font-family: 'JetBrains Mono', monospace; }
+.custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #64748b; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Status Indicators */
+.status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.status-dot.ready { background-color: #10B981; box-shadow: 0 0 5px #10B981; }
+.status-dot.empty { background-color: #EF4444; }
+.status-dot.loading { background-color: #F59E0B; animation: pulse 1s infinite; }
+
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+.opt-group { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin-bottom: 10px; position: relative; }
+.dark .opt-group { border-color: #334155; }
+.opt-group-label { position: absolute; top: -7px; left: 8px; background: #fff; padding: 0 4px; font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+.dark .opt-group-label { background: #1E293B; color: #94a3b8; }
+
+.opt-input { background: transparent; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-family: 'JetBrains Mono'; font-size: 10px; outline: none; transition: all 0.2s; width: 100%; color: inherit; }
+.dark .opt-input { border-color: #475569; }
+.opt-input:focus { border-color: #8B5CF6; background: rgba(139, 92, 246, 0.05); }
+.opt-label-mini { font-size: 9px; color: #64748b; display: flex; align-items: center; gap: 4px; margin-bottom: 2px; font-weight: 600; }
+
+.mc-stat-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 8px; text-align: center; }
+.dark .mc-stat-box { background: rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.05); }
+
+.range-group { display: flex; gap: 2px; align-items: center; }
+.range-input { text-align: center; padding: 2px 0; }
+.range-sep { font-size: 8px; color: #94a3b8; }
+
+.help-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #e2e8f0; color: #64748b; font-size: 10px;
+    margin-left: 6px; cursor: help; transition: all 0.2s;
+}
+.dark .help-icon { background: #334155; color: #94a3b8; }
+.help-icon:hover { background: #8B5CF6; color: white; transform: scale(1.1); }
+
+.has-tooltip { position: relative; display: inline-flex; align-items: center; }
+.tooltip-source { display: none; }
+
+#global-tooltip {
+    position: fixed; visibility: hidden; opacity: 0; width: 320px; 
+    background: #0F172A; color: #f3f4f6;
+    padding: 16px; border-radius: 8px; font-size: 11px; line-height: 1.6; 
+    border: 1px solid #334155; border-top: 3px solid #8B5CF6; 
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); pointer-events: none;
+    z-index: 999999; transition: opacity 0.15s ease-out;
+}
+#global-tooltip h4 { color: #8B5CF6; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+#global-tooltip p { margin-bottom: 8px; color: #cbd5e1; }
+#global-tooltip .formula-box { background: rgba(139, 92, 246, 0.1); border: 1px dashed rgba(139, 92, 246, 0.3); padding: 6px; border-radius: 4px; font-family: 'JetBrains Mono'; color: #A78BFA; margin-bottom: 8px; text-align: center; }
+#global-tooltip .example-calc { background: rgba(255, 255, 255, 0.05); padding: 8px; border-radius: 4px; font-size: 10px; font-family: 'JetBrains Mono'; border-left: 2px solid #8B5CF6; margin-top: 4px; }
+
+.health-monitor { font-size: 9px; margin-top: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.health-item { background: rgba(0,0,0,0.03); padding: 2px 4px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+.dark .health-item { background: rgba(255,255,255,0.05); }
+
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: #8B5CF6; }
+.filter-row th { padding: 4px; background: rgba(0,0,0,0.02); }
+.dark .filter-row th { background: rgba(255,255,255,0.02); }
+.filter-input { width: 100%; background: transparent; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 9px; font-family: 'JetBrains Mono'; outline: none; text-align: center; }
+.dark .filter-input { border-color: #475569; color: #eee; }
+.filter-input:focus { border-color: #8B5CF6; }
+
+.robust-pagination { display: flex; justify-content: space-between; align-items: center; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.05); }
+.dark .robust-pagination { border-color: rgba(255,255,255,0.05); }
+.pg-btn { font-size: 9px; padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,0.05); transition: all 0.2s; }
+.dark .pg-btn { background: rgba(255,255,255,0.1); color: #fff; }
+.pg-btn:hover:not(:disabled) { background: #8B5CF6; color: white; }
+.pg-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.strat-box { border-left: 3px solid #8B5CF6; padding-left: 12px; margin-bottom: 16px; position: relative; }
+</style>
+</head>
+
+<body class="bg-[#F8FAFC] dark:bg-[#020617] text-[#1E293B] dark:text-[#E2E8F0] min-h-screen font-sans">
+
+<!-- GLOBAL TOOLTIP -->
+<div id="global-tooltip"></div>
+
+<!-- HEADER -->
+<header class="glass sticky top-0 z-40 border-b shadow-sm">
+  <div class="max-w-[1800px] mx-auto px-4 h-14 flex justify-between items-center">
+    <div class="flex items-center gap-3">
+      <h1 class="font-bold text-base flex items-center gap-2 text-dark-900 dark:text-white">
+        <span class="text-xl text-brand-500"><i class="fas fa-globe"></i></span> Global Breadth <span class="text-[9px] bg-brand-500 text-white px-1.5 py-0.5 rounded font-bold mono">v2.1</span>
+      </h1>
+      <nav class="hidden md:flex gap-1 ml-4">
+          <button id="btn-tab-dashboard" onclick="UI.switchTab('dashboard')" class="px-3 py-1 text-[10px] font-bold rounded bg-white dark:bg-dark-800 shadow-sm text-brand-600 transition-all">DASHBOARD</button>
+          <button id="btn-tab-docs" onclick="UI.switchTab('docs')" class="px-3 py-1 text-[10px] font-bold rounded text-gray-400 hover:text-brand-500 transition-all">STRATEGY LOGIC</button>
+      </nav>
+    </div>
+    <div class="flex items-center gap-2">
+        <span id="system-status" class="text-[9px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+            <span class="status-dot empty" id="main-status-dot"></span> System Idle
+        </span>
+    </div>
+    <div class="flex items-center gap-3">
+        <div class="hidden md:flex flex-col items-end mr-2">
+            <span class="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Market Source</span>
+            <span id="market-source-badge" class="text-[9px] font-bold text-brand-500 bg-brand-500/10 px-1 rounded animate-pulse">YAHOO (MULTI-PROXY)</span>
+        </div>
+        <button onclick="UI.exportToCSV()" class="text-[10px] font-bold uppercase tracking-wider bg-green-500/10 text-green-600 px-3 py-1 rounded hover:bg-green-500 hover:text-white transition-all"><i class="fas fa-file-csv"></i> CSV</button>
+        <button onclick="UI.toggleTheme()" class="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-dark-800 hover:text-brand-500"><i class="fas fa-adjust"></i></button>
+    </div>
+  </div>
+</header>
+
+<div class="max-w-[1800px] mx-auto px-4 py-6 grid grid-cols-12 gap-6">
+
+<!-- SIDEBAR -->
+<aside class="col-span-12 xl:col-span-2 space-y-3">
+<div class="glass rounded-xl p-4 border-t-4 border-t-brand-500 sticky top-20 shadow-lg z-30">
+  <div class="mb-3 flex items-center justify-between">
+    <h3 class="text-[10px] font-black uppercase text-gray-500 tracking-widest">Config</h3>
+    <span class="text-[8px] bg-brand-500/20 text-brand-600 px-1.5 py-0.5 rounded font-bold">BREADTH</span>
+  </div>
+
+  <div class="opt-group bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800">
+      <span class="opt-group-label text-blue-500">Step 1: Universe</span>
+      <div class="mb-1">
+          <label class="opt-label-mini">Market Type</label>
+          <select id="cfg-market-type" onchange="UI.changeMarketMode(this.value)" class="opt-input font-bold text-stock-600 dark:text-stock-400 cursor-pointer bg-white dark:bg-dark-900">
+            <option value="ETF" selected>Global Multi-Asset (Yahoo)</option>
+            <option value="CRYPTO">Crypto (Binance)</option>
+          </select>
+          <div class="text-[8px] text-gray-400 font-bold mt-1 tracking-tighter" id="trading-days-info">* 252 Trading Days/Year</div>
+      </div>
+      <div class="mt-2">
+           <label class="opt-label-mini">Universe Components</label>
+           <div class="flex gap-1 mb-1">
+            <input id="cfg-add" placeholder="SYMBOL" class="opt-input flex-1 uppercase">
+            <button onclick="UI.addAsset()" class="w-6 h-6 rounded bg-gray-200 dark:bg-dark-700 hover:bg-brand-500 hover:text-white transition-all text-[10px]"><i class="fas fa-plus"></i></button>
+           </div>
+           <select id="quick-add-select" onchange="UI.suggestAsset(this.value); this.value='';" class="opt-input cursor-pointer mb-2 text-gray-500">
+              <!-- Populated by JS -->
+           </select>
+           <div id="asset-list" class="flex flex-wrap gap-1 max-h-[100px] overflow-y-auto custom-scrollbar content-start mb-2"></div>
+           
+           <button onclick="Engine.fetchData()" id="btn-fetch" class="w-full bg-brand-500 hover:bg-brand-600 text-white py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all shadow">
+               <i class="fas fa-cloud-download-alt mr-1"></i> Fetch Data
+           </button>
+           
+           <div id="data-health" class="health-monitor mt-2 border-t dark:border-dark-700 pt-2">
+               <span class="text-[8px] text-gray-400 col-span-2 text-center italic">No data loaded yet.</span>
+           </div>
+      </div>
+  </div>
+
+  <div class="opt-group border-l-4 border-l-brand-500">
+      <span class="opt-group-label text-brand-600">Step 2: Breadth Calculation</span>
+      <div class="mb-2">
+          <label class="opt-label-mini">Weighting Method</label>
+          <select id="cfg-weighting" class="opt-input font-bold text-brand-600 dark:text-brand-400 cursor-pointer">
+            <option value="ALL" selected>★ RUN ALL Methods</option>
+            <option value="Equal">1. Equal Weight (Count)</option>
+            <option value="Volume">2. Volume Weighted (Value)</option>
+            <option value="Trend">3. Trend Momentum (ROC)</option>
+            <option value="InvVol">4. Inverse Volatility (Low Risk)</option>
+          </select>
+      </div>
+      <div class="mb-2">
+          <label class="opt-label-mini">Strategy Logic</label>
+          <select id="cfg-strategy" class="opt-input font-bold text-brand-600 dark:text-brand-400 cursor-pointer">
+            <option value="ALL" selected>★ RUN ALL Strategies</option>
+            <option value="Switch">1. Breadth Switch</option>
+            <option value="Scale">2. Breadth Scale</option>
+            <option value="Alpha">3. Breadth Alpha</option>
+            <option value="Regime">4. Breadth Regime</option>
+            <option value="Contrarian">5. Breadth Contrarian</option>
+          </select>
+      </div>
+      <div>
+          <label class="opt-label-mini">Benchmark (To Trade)</label>
+          <input id="cfg-bench" value="SPY" class="opt-input uppercase text-center font-bold text-stock-500">
+      </div>
+  </div>
+
+  <div class="opt-group">
+      <span class="opt-group-label">Params Scan</span>
+      
+      <!-- Lookback Generator -->
+      <div class="mb-2">
+          <label class="opt-label-mini justify-between">
+              Lookback (Breadth)
+              <span class="has-tooltip"><i class="fas fa-question-circle"></i><span class="tooltip-source">
+                  <h4>Breadth Lookback</h4>
+                  <p>จำนวนวันที่ใช้เปรียบเทียบราคาเพื่อระบุว่าสินทรัพย์เป็นขาขึ้นหรือไม่</p>
+                  <div class="formula-box">If Price > Price[t - LB] -> Bullish</div>
+              </span></span>
+          </label>
+          <div class="range-group">
+              <input id="cfg-lb-start" value="10" type="number" class="opt-input range-input" placeholder="Start">
+              <span class="range-sep">~</span>
+              <input id="cfg-lb-end" value="100" type="number" class="opt-input range-input" placeholder="End">
+              <span class="range-sep">+</span>
+              <input id="cfg-lb-step" value="10" type="number" class="opt-input range-input" placeholder="Step">
+          </div>
+      </div>
+
+      <!-- Rebal Generator -->
+      <div>
+          <label class="opt-label-mini justify-between">
+              Rebal Frequency
+              <span class="has-tooltip"><i class="fas fa-question-circle"></i><span class="tooltip-source">
+                  <h4>Rebalance Frequency</h4>
+                  <p>ความถี่ในการตรวจสอบ Breadth และปรับพอร์ต</p>
+              </span></span>
+          </label>
+          <div class="range-group">
+              <input id="cfg-rb-start" value="5" type="number" class="opt-input range-input" placeholder="Start">
+              <span class="range-sep">~</span>
+              <input id="cfg-rb-end" value="20" type="number" class="opt-input range-input" placeholder="End">
+              <span class="range-sep">+</span>
+              <input id="cfg-rb-step" value="5" type="number" class="opt-input range-input" placeholder="Step">
+          </div>
+      </div>
+  </div>
+
+  <div class="opt-group">
+      <span class="opt-group-label">Money Management & Fees</span>
+      <div class="grid grid-cols-2 gap-2 mb-2">
+          <div>
+              <label class="opt-label-mini text-stock-600">Initial ($)</label>
+              <input id="cfg-initial" value="10000" type="number" class="opt-input text-center font-bold">
+          </div>
+          <div>
+              <label class="opt-label-mini text-acc-green">DCA ($)</label>
+              <input id="cfg-dca" value="0" type="number" class="opt-input text-center font-bold text-acc-green">
+          </div>
+      </div>
+      <div class="grid grid-cols-3 gap-1 mb-2">
+          <div>
+              <label class="opt-label-mini text-red-500">Buy (%)</label>
+              <input id="cfg-buy-fee" value="0.1" type="number" step="0.01" class="opt-input text-center text-red-500 font-bold">
+          </div>
+          <div>
+              <label class="opt-label-mini text-red-500">Sell (%)</label>
+              <input id="cfg-sell-fee" value="0.1" type="number" step="0.01" class="opt-input text-center text-red-500 font-bold">
+          </div>
+          <div>
+              <label class="opt-label-mini text-blue-500">Mgmt (%/Y)</label>
+              <input id="cfg-mgmt-fee" value="0.0" type="number" step="0.1" class="opt-input text-center text-blue-500 font-bold">
+          </div>
+      </div>
+      <div class="grid grid-cols-2 gap-1">
+          <div>
+              <label class="opt-label-mini">Start Date</label>
+              <input type="date" id="cfg-start" class="opt-input px-0 text-center">
+          </div>
+          <div>
+              <label class="opt-label-mini">End Date</label>
+              <input type="date" id="cfg-end" class="opt-input px-0 text-center">
+          </div>
+      </div>
+  </div>
+
+  <button onclick="Engine.runSimulation()" id="btn-run" class="w-full bg-gradient-to-r from-brand-600 to-brand-500 py-3 mt-1 rounded-lg font-bold text-white shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-xs tracking-wide uppercase opacity-50 cursor-not-allowed" disabled>
+    <i class="fas fa-play"></i> <span>Run Breadth Analysis</span>
+  </button>
+   
+  <div id="status-log" class="mt-2 text-[9px] font-mono text-gray-400 h-[100px] overflow-y-auto bg-black/10 rounded p-2 hidden"></div>
+</div>
+</aside>
+
+<!-- MAIN CONTENT -->
+<div class="col-span-12 xl:col-span-10 space-y-6">
+
+    <!-- DASHBOARD TAB -->
+    <div id="view-dashboard" class="space-y-6 animate-fade-in">
+        <!-- KPIs -->
+        <div class="relative">
+            <div class="absolute -top-3 right-0 text-[9px] text-gray-400 flex items-center gap-1">
+                KEY PERFORMANCE INDICATORS
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+              <!-- Cards -->
+              <div class="glass p-4 rounded-xl border-l-4 border-l-acc-green shadow-sm kpi-card">
+                <div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Net CAGR</div>
+                <div id="kpi-cagr" class="text-xl font-bold mono text-dark-900 dark:text-white">-</div>
+                <div id="bench-cagr" class="text-[9px] text-gray-400 mt-1">Bench: -</div>
+              </div>
+
+              <div class="glass p-4 rounded-xl border-l-4 border-l-stock-500 shadow-sm kpi-card">
+                <div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Sharpe Ratio</div>
+                <div id="kpi-sharpe" class="text-xl font-bold mono text-dark-900 dark:text-white">-</div>
+                <div id="bench-sharpe" class="text-[9px] text-gray-400 mt-1">Bench: -</div>
+              </div>
+
+              <div class="glass p-4 rounded-xl border-l-4 border-l-blue-500 shadow-sm kpi-card">
+                <div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Sortino Ratio</div>
+                <div id="kpi-sortino" class="text-xl font-bold mono text-blue-500">-</div>
+                <div id="bench-sortino" class="text-[9px] text-gray-400 mt-1">Bench: -</div>
+              </div>
+
+              <div class="glass p-4 rounded-xl border-l-4 border-l-purple-500 shadow-sm kpi-card">
+                <div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Calmar Ratio</div>
+                <div id="kpi-calmar" class="text-xl font-bold mono text-purple-500">-</div>
+                <div id="bench-calmar" class="text-[9px] text-gray-400 mt-1">Bench: -</div>
+              </div>
+
+              <div class="glass p-4 rounded-xl border-l-4 border-l-acc-red shadow-sm kpi-card">
+                <div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Max Drawdown</div>
+                <div id="kpi-mdd" class="text-xl font-bold mono text-acc-red">-</div>
+                <div id="bench-mdd" class="text-[9px] text-gray-400 mt-1">Bench: -</div>
+              </div>
+
+              <div class="glass p-4 rounded-xl border-l-4 border-l-gray-400 shadow-sm kpi-card">
+                <div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Time in Market</div>
+                <div id="kpi-winrate" class="text-xl font-bold mono text-gray-500 dark:text-gray-300">-</div>
+                <div class="text-[9px] text-gray-400 mt-1">Avg Exposure</div>
+              </div>
+            </div>
+        </div>
+
+        <!-- Main Chart -->
+        <div class="glass p-6 rounded-2xl shadow-xl space-y-4">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <h3 class="text-xs font-bold uppercase text-gray-500 tracking-widest">Growth & Breadth Analysis</h3>
+                    <p class="text-[9px] text-gray-400 mono mt-0.5 ml-2" id="chart-subtitle">Waiting for simulation...</p>
+                </div>
+                <button onclick="UI.toggleLog()" class="text-[9px] font-bold bg-gray-100 dark:bg-dark-800 px-3 py-1 rounded border dark:border-dark-700 mono">LOG SCALE</button>
+            </div>
+            <div class="h-[320px] w-full"><canvas id="chart-equity"></canvas></div>
+            <div class="h-[100px] w-full border-t dark:border-dark-700 pt-2 relative">
+                <div class="absolute top-2 left-2 text-[9px] font-bold text-brand-500 uppercase bg-brand-500/10 px-1 rounded">Market Breadth (%)</div>
+                <canvas id="chart-drawdown"></canvas>
+            </div>
+        </div>
+
+        <!-- Matrix Table -->
+        <div class="glass rounded-2xl overflow-hidden shadow-lg border border-gray-100 dark:border-dark-700 flex flex-col min-h-[500px]">
+            <div class="px-6 py-4 border-b dark:border-dark-700 bg-gray-50/50 dark:bg-dark-800/50 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <h3 class="text-xs font-black uppercase text-gray-600 dark:text-gray-300 tracking-widest">Strategy Matrix</h3>
+                    <span class="has-tooltip"><i class="fas fa-question-circle help-icon"></i><span class="tooltip-source">
+                        <h4>Optimization Results</h4>
+                        <p>ตารางแสดงผลลัพธ์จากการทดสอบทุกชุดพารามิเตอร์</p>
+                    </span></span>
+                </div>
+                <button onclick="UI.clearFilters()" class="text-[9px] bg-white dark:bg-dark-700 px-3 py-1 rounded border dark:border-dark-600 font-bold hover:text-brand-500">RESET</button>
+            </div>
+            <div class="overflow-x-auto custom-scrollbar flex-1">
+              <table class="w-full text-[10px] mono border-collapse" id="batch-matrix-table">
+                <thead class="bg-gray-100 dark:bg-dark-900 text-gray-400 text-right sticky top-0 z-10 shadow-sm">
+                  <tr>
+                    <th class="text-left p-3 sortable" onclick="UI.sortBatch('stratFull')">Strategy <i class="fas fa-sort"></i></th>
+                    <th class="text-left p-3 sortable" onclick="UI.sortBatch('method')">Weighting <i class="fas fa-sort"></i></th>
+                    <th class="p-3 sortable" onclick="UI.sortBatch('lb')">LB (D) <i class="fas fa-sort"></i></th>
+                    <th class="p-3 sortable" onclick="UI.sortBatch('rb')">RB (D) <i class="fas fa-sort"></i></th>
+                    <th class="p-3 sortable" onclick="UI.sortBatch('cagr')">CAGR <i class="fas fa-sort"></i></th>
+                    <th class="p-3 sortable" onclick="UI.sortBatch('sharpe')">Sharpe <i class="fas fa-sort"></i></th>
+                    <th class="p-3 sortable" onclick="UI.sortBatch('mdd')">MDD <i class="fas fa-sort"></i></th>
+                  </tr>
+                  <!-- Filter Row -->
+                  <tr class="filter-row">
+                      <th><select id="f-strat" onchange="UI.applyBatchFilters()" class="filter-input text-left"><option value="">All</option></select></th>
+                      <th><select id="f-method" onchange="UI.applyBatchFilters()" class="filter-input text-left"><option value="">All</option></select></th>
+                      <th><input id="f-lb" onkeyup="UI.applyBatchFilters()" class="filter-input" placeholder=">="></th>
+                      <th><input id="f-rb" onkeyup="UI.applyBatchFilters()" class="filter-input" placeholder=">="></th>
+                      <th><input id="f-cagr" onkeyup="UI.applyBatchFilters()" class="filter-input" placeholder=">="></th>
+                      <th><input id="f-sharpe" onkeyup="UI.applyBatchFilters()" class="filter-input" placeholder=">="></th>
+                      <th><input id="f-mdd" onkeyup="UI.applyBatchFilters()" class="filter-input" placeholder="<="></th>
+                  </tr>
+                </thead>
+                <tbody id="batch-table-body" class="divide-y dark:divide-dark-700 text-right font-medium"></tbody>
+                <tfoot id="batch-table-foot" class="bg-gray-50 dark:bg-dark-800 font-bold text-gray-500 border-t-2 border-gray-200 dark:border-dark-600 sticky bottom-0 z-10"></tfoot>
+              </table>
+            </div>
+             <div class="px-4 py-2 border-t dark:border-dark-700 bg-gray-50 dark:bg-dark-800 flex justify-between items-center text-[9px] text-gray-500 font-bold">
+                <span id="pagination-info">0-0 of 0</span>
+                <div class="flex gap-1"><button onclick="UI.prevPage()" id="btn-prev" class="pagination-btn" disabled>Prev</button><button onclick="UI.nextPage()" id="btn-next" class="pagination-btn" disabled>Next</button></div>
+            </div>
+        </div>
+        
+        <!-- Surface & Distribution Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- 4D Surface -->
+            <div class="glass p-6 rounded-2xl shadow-xl h-[500px] flex flex-col relative overflow-hidden">
+                <div class="flex justify-between items-center mb-2 z-10 border-b dark:border-dark-700 pb-2">
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-bold text-xs flex items-center gap-2"><span>4D Hyper-Parameter</span><span class="text-[8px] bg-brand-500 text-white px-1.5 rounded font-mono shadow">Rolling Metric</span></h3>
+                    </div>
+                    <div class="flex gap-2">
+                        <select id="surface-metric" onchange="UI.renderSurface()" class="bg-gray-100 dark:bg-dark-700 text-[9px] rounded px-2 py-1 font-bold outline-none"><option value="sharpe">Sharpe</option><option value="cagr">CAGR</option><option value="mdd">MDD</option><option value="vol">Vol</option></select>
+                        <select id="surface-sd" onchange="UI.renderSurface()" class="bg-gray-100 dark:bg-dark-700 text-[9px] rounded px-2 py-1 font-bold outline-none"><option value="0">SD: Off</option><option value="1">Mean ± 1SD</option><option value="2">Mean ± 2SD</option></select>
+                    </div>
+                </div>
+                <div id="viz-surface" class="flex-1 z-10"></div>
+                <div class="z-20 mt-2 bg-gray-50 dark:bg-dark-800/80 p-3 rounded-xl border dark:border-dark-700 backdrop-blur-sm">
+                    <div class="flex justify-between items-center mb-1"><span class="text-[9px] font-bold uppercase text-gray-500">Timeline Control</span><span id="surface-date-display" class="text-[9px] font-mono text-brand-500">Full</span></div>
+                    <div class="flex items-center gap-2"><button id="btn-play-surface" onclick="UI.toggleSurfaceAnim()" class="w-6 h-6 flex items-center justify-center rounded-full bg-brand-500 hover:scale-110 text-white shadow"><i class="fas fa-play text-[8px]"></i></button><input type="range" id="surface-slider" min="0" max="100" value="100" step="1" oninput="UI.updateSurfaceFromSlider(this.value)" class="accent-brand-500 flex-1"></div>
+                </div>
+            </div>
+
+            <!-- Distribution & Robustness Analysis -->
+            <div class="glass p-6 rounded-2xl shadow-xl h-[500px] flex flex-col relative overflow-hidden">
+                <div class="flex justify-between items-center mb-2 z-10 border-b dark:border-dark-700 pb-2">
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-bold text-xs">📊 Grid Distribution & Robustness</h3>
+                    </div>
+                    <div class="text-[8px] text-gray-400">Metric: <span id="dist-metric-label" class="font-bold text-brand-500 uppercase">SHARPE</span></div>
+                </div>
+                <div class="flex flex-col h-full gap-4">
+                    <div id="viz-dist" class="h-[55%] z-10"></div>
+                    
+                    <!-- Robustness Table -->
+                    <div class="flex-1 overflow-hidden border-t dark:border-dark-700 pt-2 flex flex-col">
+                        <div class="flex justify-between items-center mb-2 px-2">
+                            <div class="flex items-center gap-1">
+                                <h4 class="text-[9px] font-bold uppercase text-acc-orange"><i class="fas fa-shield-alt"></i> Top 20 Robust Clusters (Detailed)</h4>
+                            </div>
+                        </div>
+                        <div class="overflow-y-auto flex-1 custom-scrollbar">
+                            <table class="w-full text-[9px] mono">
+                                <thead class="bg-gray-100 dark:bg-dark-800 text-gray-500">
+                                    <tr>
+                                        <th class="text-left p-1">Rank</th>
+                                        <th>LB/RB</th>
+                                        <th class="text-right text-acc-orange">Score</th>
+                                        <th class="text-right text-brand-500">Raw</th>
+                                        <th class="text-right text-acc-green">CAGR</th>
+                                        <th class="text-right text-acc-red">MDD</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="robustness-table-body" class="divide-y dark:divide-dark-700"></tbody>
+                            </table>
+                        </div>
+                        <div class="robust-pagination px-2">
+                            <button class="pg-btn" id="btn-robust-prev" onclick="UI.prevRobustPage()"><i class="fas fa-chevron-left"></i></button>
+                            <span class="text-[8px] font-bold text-gray-500" id="robust-page-info">1 / 5</span>
+                            <button class="pg-btn" id="btn-robust-next" onclick="UI.nextRobustPage()"><i class="fas fa-chevron-right"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Monte Carlo & Logs -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="glass p-6 rounded-2xl shadow-xl h-[400px] flex flex-col relative overflow-hidden">
+                <div class="flex justify-between items-center mb-2 z-10 border-b dark:border-dark-700 pb-2">
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-bold text-xs">🎲 Monte Carlo Forecast</h3>
+                    </div>
+                    <div class="flex items-center gap-1"><span class="text-[9px] text-gray-400">Years:</span><input type="number" id="cfg-mc-years" value="1" min="1" max="5" class="w-8 text-center text-[9px] bg-gray-100 dark:bg-dark-700 rounded border dark:border-dark-600"><button onclick="UI.runMonteCarlo()" class="text-[9px] bg-brand-500 text-white px-2 py-0.5 rounded font-bold hover:scale-105 shadow">Sim</button></div>
+                </div>
+                <div class="grid grid-cols-4 gap-2 mb-2 z-10">
+                    <div class="mc-stat-box"><div class="text-[8px] text-gray-400 uppercase">Avg Sharpe</div><div id="mc-avg-sharpe" class="text-[10px] font-bold text-brand-500">-</div></div>
+                    <div class="mc-stat-box"><div class="text-[8px] text-gray-400 uppercase">Avg CAGR</div><div id="mc-avg-cagr" class="text-[10px] font-bold text-acc-green">-</div></div>
+                    <div class="mc-stat-box"><div class="text-[8px] text-gray-400 uppercase">Avg Breadth</div><div id="mc-avg-vol" class="text-[10px] font-bold text-gray-300">-</div></div>
+                    <div class="mc-stat-box"><div class="text-[8px] text-gray-400 uppercase">Avg MDD</div><div id="mc-avg-mdd" class="text-[10px] font-bold text-acc-red">-</div></div>
+                </div>
+                <div id="viz-monte-dashboard" class="flex-1 z-10"></div>
+            </div>
+
+            <div class="glass rounded-2xl overflow-hidden shadow-lg border border-gray-100 dark:border-dark-700 h-[400px] flex flex-col">
+                <div class="px-6 py-4 border-b dark:border-dark-700 bg-gray-50/30 flex items-center gap-2">
+                    <h3 class="text-xs font-bold uppercase text-gray-500 tracking-widest">Transaction Logs</h3>
+                </div>
+                <div class="overflow-x-auto custom-scrollbar flex-1"><table class="w-full text-[10px] mono"><tbody id="log-table" class="divide-y dark:divide-dark-700"></tbody></table></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- DOCS TAB -->
+    <div id="view-docs" class="space-y-8 animate-fade-in hidden">
+        <div class="text-center mb-8">
+            <span class="bg-brand-500 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-widest">Logic</span>
+            <h1 class="text-2xl font-bold text-dark-900 dark:text-white mt-2">Breadth Strategy Logic</h1>
+            <p class="text-gray-500 text-sm">หลักการคำนวณและตัวอย่างการใช้งานจริง</p>
+        </div>
+
+        <!-- 2. Weighting Methods -->
+        <div class="glass p-6 rounded-2xl shadow-sm border-l-4 border-l-acc-orange mb-6">
+            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i class="fas fa-weight-hanging text-acc-orange"></i> Breadth Weighting Methods (วิธีการนับ)</h3>
+            <div class="grid grid-cols-1 gap-4">
+                <div class="strat-box">
+                    <div class="flex justify-between items-center"><h4 class="font-bold text-sm text-gray-700 dark:text-gray-300">1. Equal Weight (Count)</h4><span class="text-[8px] bg-gray-200 dark:bg-gray-700 px-2 rounded">Popular</span></div>
+                    <p class="text-[10px] text-gray-500 mt-1">นับจำนวนหุ้นที่เป็นขาขึ้นหารด้วยจำนวนทั้งหมด (ทุกตัวมีความสำคัญเท่ากัน)</p>
+                    <span class="formula">Score = Count(Up) / Total_Assets</span>
+                    <div class="example-calc">
+                        <strong>Example:</strong> Universe 5 เหรียญ. <br>
+                        A(Up), B(Down), C(Up), D(Up), E(Down). <br>
+                        => ขาขึ้น 3 ตัว จาก 5 ตัว <br>
+                        => <strong>Score = 3 / 5 = 0.60 (60%)</strong>
+                    </div>
+                </div>
+                <div class="strat-box">
+                    <h4 class="font-bold text-sm text-gray-700 dark:text-gray-300">2. Volume Weighted (Value)</h4>
+                    <p class="text-[10px] text-gray-500 mt-1">ให้ความสำคัญกับตัวที่มี Volume ซื้อขายสูง (เงินไหลเข้าตัวใหญ่มีความหมายมากกว่า)</p>
+                    <span class="formula">Score = Sum(Vol_Up) / Sum(Total_Vol)</span>
+                    <div class="example-calc">
+                        <strong>Example:</strong> <br>
+                        A (Up, Vol: $100M), B (Down, Vol: $500M). Total Vol = $600M.<br>
+                        => Up Vol = $100M <br>
+                        => <strong>Score = 100 / 600 = 0.16 (16.7%)</strong> <br>
+                        <span class="text-acc-red italic">*แม้ A จะขึ้น แต่ B ตัวใหญ่ลง ตลาดจึงดูแย่</span>
+                    </div>
+                </div>
+                <div class="strat-box">
+                    <h4 class="font-bold text-sm text-gray-700 dark:text-gray-300">3. Trend Momentum (ROC)</h4>
+                    <p class="text-[10px] text-gray-500 mt-1">ถ่วงน้ำหนักด้วยความแรงของการขึ้น (Rate of Change) ยิ่งขึ้นแรงยิ่งได้คะแนนเยอะ</p>
+                    <span class="formula">Score = Sum(ROC_Up) / Sum(|ROC_All|)</span>
+                    <div class="example-calc">
+                        <strong>Example:</strong> <br>
+                        A (+10%), B (-2%), C (+5%). Total Abs Change = 10+2+5 = 17%.<br>
+                        => Up Contribution = 10% + 5% = 15% <br>
+                        => <strong>Score = 15 / 17 = 0.88 (88%)</strong>
+                    </div>
+                </div>
+                <div class="strat-box">
+                    <h4 class="font-bold text-sm text-gray-700 dark:text-gray-300">4. Inverse Volatility (Low Risk)</h4>
+                    <p class="text-[10px] text-gray-500 mt-1">ให้คะแนนตัวที่ขึ้นแบบนิ่งๆ (Low Vol) มากกว่าตัวที่ผันผวนสูง (Smart Money Flow)</p>
+                    <span class="formula">Weight = 1 / Volatility</span>
+                    <div class="example-calc">
+                        <strong>Example:</strong> <br>
+                        A (Up, Vol 10%), B (Up, Vol 50%). <br>
+                        => W_A = 1/10 = 0.1, W_B = 1/50 = 0.02. Total W = 0.12.<br>
+                        => A Contribution = 0.1/0.12 = 83%, B = 17%. <br>
+                        => ถ้า A ขึ้น ตัวเดียว Score จะสูงมาก เพราะ A นิ่งกว่า
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Execution Strategies -->
+        <div class="glass p-6 rounded-2xl shadow-sm border-l-4 border-l-brand-500 mb-6">
+            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i class="fas fa-chess-knight text-brand-500"></i> Execution Strategies (กลยุทธ์การเทรด)</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="strat-box">
+                    <h4 class="font-bold text-sm text-brand-600">1. Breadth Switch</h4>
+                    <span class="formula">If Score > 0.5: Buy 100%, Else: Cash</span>
+                    <div class="example-calc mt-1">
+                        Breadth 51% -> Port 100% Invested.<br>
+                        Breadth 49% -> Port 0% (Cash).
+                    </div>
+                </div>
+                <div class="strat-box">
+                    <h4 class="font-bold text-sm text-brand-600">2. Breadth Scale</h4>
+                    <span class="formula">Exposure = Score (0.0 to 1.0)</span>
+                    <div class="example-calc mt-1">
+                        Breadth 70% -> Port 70% Asset / 30% Cash.<br>
+                        Breadth 20% -> Port 20% Asset / 80% Cash.
+                    </div>
+                </div>
+                <div class="strat-box">
+                    <h4 class="font-bold text-sm text-brand-600">4. Breadth Regime</h4>
+                    <span class="formula">>0.6: 100% | 0.4-0.6: 50% | <0.4: 0%</span>
+                    <div class="example-calc mt-1">
+                        Breadth 55% -> อยู่ในช่วง Neutral -> ถือ 50%.
+                    </div>
+                </div>
+                <div class="strat-box">
+                    <h4 class="font-bold text-sm text-brand-600">5. Breadth Contrarian</h4>
+                    <span class="formula">If Score < 0.2: Buy, Else: Cash</span>
+                    <div class="example-calc mt-1">
+                        Breadth 10% (Panic) -> Buy 100%.<br>
+                        Breadth 50% (Normal) -> Sell/Cash.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ================= LOADER ================= -->
+<div id="loader" class="fixed inset-0 bg-white/95 dark:bg-dark-900/95 z-[100] hidden flex flex-col items-center justify-center backdrop-blur-md">
+    <div class="w-16 h-16 border-4 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+    <p class="mt-6 font-bold mono text-sm tracking-[0.3em] animate-pulse uppercase" id="loader-text">Fetching Market Data...</p>
+</div>
+
+<script>
+/* =========================================================
+   QUANT ENGINE CORE v2.1 (Fees & Robustness)
+========================================================= */
+
+const CRYPTO_UNIVERSE = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "DOT", "AVAX", "LINK", "UNI", "LTC", "ATOM", "ETC"];
+const ETF_UNIVERSE = [
+    // Equity
+    "SPY", "QQQ", "IWM", "VT", "EFA", "EEM",
+    // Fixed Income
+    "TLT", "IEF", "LQD", "HYG",
+    // Commodities
+    "GLD", "SLV", "USO", "DBC",
+    // Alt
+    "VNQ", "UUP"
+];
+
+const STRAT_NAMES = {
+    Switch: "1. Breadth Switch",
+    Scale: "2. Breadth Scale",
+    Alpha: "3. Breadth Alpha",
+    Regime: "4. Breadth Regime",
+    Contrarian: "5. Breadth Contrarian"
+};
+
+const WEIGHT_NAMES = {
+    Equal: "Equal Weight",
+    Volume: "Volume Weighted",
+    Trend: "Trend Momentum",
+    InvVol: "Inverse Volatility"
+};
+
+const PROXIES = [
+    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    url => `https://corsproxy.io/?${encodeURIComponent(url)}`
+];
+
+class QuantEngine {
+  constructor(){
+    this.universe = [...ETF_UNIVERSE];
+    this.marketMode = "ETF"; 
+    this.allData = {}; 
+    this.dates = [];
+    this.results = [];
+    this.tradingDays = 252;
+    this.benchStats = { cagr: 0, sharpe: 0, mdd: 0, sortino: 0, calmar: 0, winrate: 0 };
+    this.dataStatus = {}; 
+  }
+
+  setMarketMode(mode){
+      this.marketMode = mode;
+      if(mode === "ETF") {
+          this.universe = [...ETF_UNIVERSE];
+          this.tradingDays = 252;
+          document.getElementById('cfg-bench').value = 'SPY';
+          document.getElementById('trading-days-info').innerText = "* 252 Trading Days/Year";
+      } else {
+          this.universe = [...CRYPTO_UNIVERSE];
+          this.tradingDays = 365;
+          document.getElementById('cfg-bench').value = 'BTC';
+          document.getElementById('trading-days-info').innerText = "* 365 Trading Days/Year";
+      }
+      this.dataStatus = {};
+      UI.renderAssets();
+      UI.renderQuickAddOptions();
+      UI.renderHealthMonitor();
+      UI.setSystemStatus('idle');
+      this.resetData();
+  }
+
+  resetData() {
+      this.allData = {};
+      this.dates = [];
+      this.dataStatus = {};
+  }
+
+  async fetchAssetData(symbol){
+    const logEl = document.getElementById('status-log');
+    logEl.classList.remove('hidden');
+    
+    let result = null;
+    if(this.marketMode === "CRYPTO") result = await this.fetchBinanceData(symbol);
+    else result = await this.fetchYahooDataRecursive(symbol, 0);
+
+    if (result && result.length > 50) {
+        logEl.innerHTML += `<span class="text-acc-green">> ✅ ${symbol} OK (${result.length} Days)</span><br>`;
+        this.dataStatus[symbol] = { status: 'ok', days: result.length };
+    } else {
+        logEl.innerHTML += `<span class="text-acc-red">> ❌ ${symbol} FAILED</span><br>`;
+        this.dataStatus[symbol] = { status: 'error', days: 0 };
+        return null; 
+    }
+    return result;
+  }
+
+  async fetchBinanceData(symbol){
+    try {
+        const pair = `${symbol.toUpperCase()}USDT`;
+        const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${pair}&interval=1d&limit=1000`);
+        if(!response.ok) throw new Error(`Fetch failed`);
+        const data = await response.json();
+        return data.map(d => ({ date: new Date(d[0]).toISOString().slice(0, 10), price: parseFloat(d[4]), volume: parseFloat(d[5]) }));
+    } catch(e) { return null; }
+  }
+
+  async fetchYahooDataRecursive(symbol, proxyIdx){
+      if(proxyIdx >= PROXIES.length) return null;
+      try {
+          const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol.toUpperCase()}?interval=1d&range=5y`;
+          const proxyUrl = PROXIES[proxyIdx](yahooUrl);
+          const response = await fetch(proxyUrl);
+          if(!response.ok) throw new Error(`Proxy ${proxyIdx} failed`);
+          const data = await response.json();
+          const result = data.chart.result[0];
+          if(!result || !result.timestamp) throw new Error(`No data`);
+          const timestamps = result.timestamp;
+          const prices = result.indicators.quote[0].close;
+          const volumes = result.indicators.quote[0].volume;
+          const history = [];
+          for(let i=0; i<timestamps.length; i++){
+              if(prices[i] !== null && prices[i] !== undefined){
+                  const d = new Date(timestamps[i] * 1000).toISOString().slice(0, 10);
+                  history.push({ date: d, price: prices[i], volume: volumes[i] || 0 });
+              }
+          }
+          return history;
+      } catch(e) { return await this.fetchYahooDataRecursive(symbol, proxyIdx + 1); }
+  }
+
+  async fetchData() {
+      UI.loading(true, "FETCHING MARKET DATA...");
+      document.getElementById('status-log').innerHTML = '';
+      UI.setSystemStatus('loading');
+      
+      const cfg = UI.getParams();
+      let desiredTickers = [...new Set([...this.universe, cfg.bench])];
+      
+      const rawResults = await Promise.all(desiredTickers.map(s => this.fetchAssetData(s)));
+      
+      const availableTickers = [];
+      const availableData = [];
+      
+      rawResults.forEach((res, i) => {
+          if(res && res.length > 50) { 
+              availableTickers.push(desiredTickers[i]);
+              availableData.push(res);
+          }
+      });
+
+      if(availableData.length < 2) {
+          alert("Not enough data loaded. Please add more valid assets.");
+          UI.loading(false);
+          UI.setSystemStatus('error');
+          UI.renderHealthMonitor();
+          return;
+      }
+
+      const dateSet = new Set(); 
+      availableData.forEach(r => r.forEach(x => dateSet.add(x.date)));
+      this.dates = [...dateSet].sort();
+      
+      this.allData = {};
+      availableTickers.forEach((s, idx) => {
+          const pLookup = {}; 
+          const vLookup = {};
+          availableData[idx].forEach(h => { pLookup[h.date] = h.price; vLookup[h.date] = h.volume; });
+          
+          let lastP = availableData[idx][0]?.price || 100;
+          let lastV = 0;
+          
+          const pSeries = [];
+          const vSeries = [];
+          
+          this.dates.forEach(d => { 
+              if(pLookup[d]) { lastP = pLookup[d]; lastV = vLookup[d]; }
+              pSeries.push(lastP);
+              vSeries.push(lastV);
+          });
+          
+          this.allData[s] = { prices: pSeries, volumes: vSeries };
+      });
+
+      UI.renderHealthMonitor();
+      UI.loading(false);
+      UI.setSystemStatus('ready');
+      UI.enableRunButton(true);
+  }
+
+  runSimulation() {
+      if (Object.keys(this.allData).length === 0) {
+          alert("Please Fetch Data first!");
+          return;
+      }
+
+      UI.loading(true, "CALCULATING BREADTH...");
+      const cfg = UI.getParams();
+      
+      const benchKey = cfg.bench;
+      const activeUniverse = this.universe.filter(u => this.allData[u] && u !== benchKey);
+      
+      if(activeUniverse.length === 0) {
+          alert("No valid assets in universe to calculate breadth.");
+          UI.loading(false); return;
+      }
+
+      let startIdx = this.dates.findIndex(d => d >= cfg.start);
+      let endIdx = this.dates.findIndex(d => d > cfg.end);
+      if (startIdx === -1) startIdx = 0;
+      if (endIdx === -1) endIdx = this.dates.length;
+      const sliceEnd = endIdx;
+      
+      if(sliceEnd <= startIdx + 30) { 
+          alert(`Insufficient data in selected range.`); 
+          UI.loading(false); return; 
+      }
+
+      this.results = [];
+      
+      // FEE CONFIG
+      const buyFee = cfg.buyFee / 100;
+      const sellFee = cfg.sellFee / 100;
+      const dailyMgmtFee = (cfg.mgmtFee / 100) / this.tradingDays;
+
+      setTimeout(() => {
+          const stratsToRun = cfg.strategy === "ALL" ? Object.keys(STRAT_NAMES) : [cfg.strategy];
+          const methodsToRun = cfg.weighting === "ALL" ? Object.keys(WEIGHT_NAMES) : [cfg.weighting];
+
+          for(const stratKey of stratsToRun){
+            for(const methodKey of methodsToRun){
+                for(const lb of cfg.lookbacks){
+                  
+                  // --- 1. Calculate Breadth Series ---
+                  const breadthSeries = [];
+                  
+                  const getVol = (symbol, t, period) => {
+                      if (t < period) return 1;
+                      const prices = this.allData[symbol].prices;
+                      const slice = [];
+                      for(let i=t-period+1; i<=t; i++) slice.push((prices[i]-prices[i-1])/prices[i-1]);
+                      return math.std(slice) || 0.01;
+                  };
+
+                  for(let t=0; t<this.dates.length; t++) {
+                      if(t < lb) { breadthSeries.push(0); continue; }
+                      
+                      let numerator = 0;
+                      let denominator = 0;
+
+                      activeUniverse.forEach(sym => {
+                          const prices = this.allData[sym].prices;
+                          const volumes = this.allData[sym].volumes;
+                          
+                          if(prices[t] && prices[t-lb]) {
+                              const isUp = prices[t] > prices[t-lb];
+                              
+                              if (methodKey === 'Equal') {
+                                  if (isUp) numerator += 1;
+                                  denominator += 1;
+                              } 
+                              else if (methodKey === 'Volume') {
+                                  if (isUp) numerator += volumes[t];
+                                  denominator += volumes[t];
+                              }
+                              else if (methodKey === 'Trend') {
+                                  const roc = (prices[t] - prices[t-lb]) / prices[t-lb];
+                                  if (roc > 0) numerator += roc;
+                                  denominator += Math.abs(roc);
+                              }
+                              else if (methodKey === 'InvVol') {
+                                  const vol = getVol(sym, t, 20);
+                                  const w = 1 / (vol + 0.0001);
+                                  if (isUp) numerator += w;
+                                  denominator += w;
+                              }
+                          }
+                      });
+                      
+                      const score = denominator > 0 ? numerator / denominator : 0;
+                      breadthSeries.push(score);
+                  }
+
+                  for(const rb of cfg.rebals){
+                    
+                    let cash = cfg.initial;
+                    let shares = {};
+                    let curve = [], logs = [], totalInvestedDays = 0;
+                    
+                    [...activeUniverse, benchKey].forEach(k => shares[k] = 0);
+
+                    for(let t = startIdx; t < sliceEnd; t++){
+                      
+                      // 1. Mark to Market
+                      let equityValue = 0;
+                      Object.keys(shares).forEach(k => {
+                          if(shares[k] > 0) equityValue += shares[k] * this.allData[k].prices[t];
+                      });
+                      let nav = cash + equityValue;
+                      
+                      // 2. Charge Management Fee (Daily)
+                      if(nav > 0) {
+                          const fee = nav * dailyMgmtFee;
+                          // Deduct from cash if possible, else liquidation implies logic complexity
+                          // Simplified: Deduct from NAV virtually by reducing shares/cash proportionally or just simple cash deduction
+                          // Here: Deduct from cash
+                          cash -= fee;
+                          nav -= fee; 
+                      }
+
+                      // 3. Rebalance Logic
+                      if((t - startIdx) % rb === 0){
+                          const bVal = breadthSeries[t];
+                          let targetWeights = {};
+                          let exposure = 0;
+
+                          if (stratKey === 'Switch') {
+                              exposure = bVal > 0.5 ? 1.0 : 0.0;
+                              targetWeights[benchKey] = exposure;
+                          } 
+                          else if (stratKey === 'Scale') {
+                              exposure = bVal;
+                              targetWeights[benchKey] = exposure;
+                          }
+                          else if (stratKey === 'Alpha') {
+                              const bullishAssets = activeUniverse.filter(sym => this.allData[sym].prices[t] > this.allData[sym].prices[t-lb]);
+                              exposure = bullishAssets.length > 0 ? 1.0 : 0.0;
+                              if (exposure > 0) {
+                                  bullishAssets.forEach(s => targetWeights[s] = 1.0 / bullishAssets.length);
+                              }
+                          }
+                          else if (stratKey === 'Regime') {
+                              if (bVal > 0.6) exposure = 1.0;
+                              else if (bVal > 0.4) exposure = 0.5;
+                              else exposure = 0.0;
+                              targetWeights[benchKey] = exposure;
+                          }
+                          else if (stratKey === 'Contrarian') {
+                              exposure = bVal < 0.2 ? 1.0 : 0.0;
+                              targetWeights[benchKey] = exposure;
+                          }
+
+                          if(exposure > 0) totalInvestedDays++;
+
+                          // Execution with Fees
+                          let currentVal = {}; 
+                          Object.keys(shares).forEach(k => currentVal[k] = shares[k] * this.allData[k].prices[t]);
+                          
+                          // A. Sell First
+                          Object.keys(shares).forEach(k => {
+                              const targetPct = targetWeights[k] || 0;
+                              const targetAmt = nav * targetPct;
+                              const diff = targetAmt - currentVal[k];
+                              if(diff < -0.01) { // Sell
+                                  const sellAmt = Math.abs(diff);
+                                  const sharesToSell = sellAmt / this.allData[k].prices[t];
+                                  shares[k] -= sharesToSell;
+                                  cash += sellAmt * (1 - sellFee); // Deduct Sell Fee
+                              }
+                          });
+
+                          // B. Buy
+                          Object.keys(targetWeights).forEach(k => {
+                              const targetPct = targetWeights[k];
+                              const targetAmt = nav * targetPct;
+                              const diff = targetAmt - (shares[k] * this.allData[k].prices[t]);
+                              if(diff > 0.01 && cash > 0) { // Buy
+                                  // Ensure we have enough cash (fee inclusive)
+                                  // Cost = BuyAmt + (BuyAmt * Fee) = BuyAmt * (1+Fee)
+                                  // MaxBuy = Cash / (1+Fee)
+                                  let amountToBuy = diff;
+                                  if (amountToBuy * (1 + buyFee) > cash) amountToBuy = cash / (1 + buyFee);
+                                  
+                                  const sharesToBuy = amountToBuy / this.allData[k].prices[t];
+                                  shares[k] += sharesToBuy;
+                                  cash -= amountToBuy * (1 + buyFee); // Deduct Buy Fee
+                              }
+                          });
+                          
+                          if(t % (rb*2) === 0) {
+                              logs.push({ 
+                                  date: this.dates[t], 
+                                  breadth: (bVal*100).toFixed(1), 
+                                  nav: nav,
+                                  exposure: (exposure*100).toFixed(0)
+                              });
+                          }
+                      }
+                      
+                      let finalDailyEq = cash;
+                      Object.keys(shares).forEach(k => {
+                          if(shares[k] > 0) finalDailyEq += shares[k] * this.allData[k].prices[t];
+                      });
+                      curve.push(finalDailyEq);
+                    }
+                    
+                    const periodBreadth = breadthSeries.slice(startIdx, sliceEnd);
+                    const avgBreadth = (periodBreadth.reduce((a,b)=>a+b,0) / periodBreadth.length) * 100;
+                    const stats = this.calcStats(curve, cfg.rf);
+
+                    this.results.push({ 
+                      strat: stratKey, stratFull: STRAT_NAMES[stratKey], 
+                      method: methodKey, methodFull: WEIGHT_NAMES[methodKey],
+                      lb, rb, curve, logs, 
+                      dates: this.dates.slice(startIdx, sliceEnd), 
+                      avgTO: ((totalInvestedDays/curve.length)*100).toFixed(0),
+                      avgBreadth: avgBreadth.toFixed(1),
+                      breadthSeries: periodBreadth,
+                      ...stats,
+                      // Additional data for robustness table
+                      cagrVal: parseFloat(stats.cagr),
+                      mddVal: parseFloat(stats.mdd)
+                    });
+                  }
+                }
+            }
+          }
+          
+          const bPriceRaw = this.allData[benchKey]?.prices;
+          if (bPriceRaw) {
+              const bPriceSliced = bPriceRaw.slice(startIdx, sliceEnd);
+              const startCap = cfg.initial;
+              const bNorm = bPriceSliced.map(v => (v / bPriceSliced[0]) * startCap);
+              this.benchStats = this.calcStats(bNorm, cfg.rf);
+          } else {
+              this.benchStats = { cagr: 0, sharpe: 0, mdd: 0, sortino: 0, calmar: 0, winrate: 0 };
+          }
+          
+          this.results.sort((a,b) => b.sharpe - a.sharpe);
+          
+          UI.currentPage = 1;
+          UI.populateStrategyFilter(); 
+          UI.populateMethodFilter();
+          UI.renderBatchTable();
+          UI.selectResult(0);
+          setTimeout(() => UI.initSurfaceControls(), 200);
+          UI.loading(false);
+
+      }, 50);
+  }
+
+  calcStats(curve, rfPct = 2.0){
+    if(!curve.length) return {cagr:0, sharpe:0, mdd:0, sortino:0, calmar:0, winrate:0};
+    const rets = []; let posDays = 0;
+    for(let i=1; i<curve.length; i++) { const r = curve[i]/curve[i-1]-1; rets.push(r); if(r > 0) posDays++; }
+    const N = rets.length;
+    const rfDaily = (rfPct/100)/this.tradingDays; 
+    const excessRets = rets.map(r => r - rfDaily);
+    const totalRet = curve[curve.length-1]/curve[0];
+    const years = Math.max(curve.length / this.tradingDays, 0.1); 
+    const cagr = (Math.pow(totalRet, 1/years) - 1) * 100;
+    const stdDev = math.std(rets); 
+    const annVol = stdDev * Math.sqrt(this.tradingDays);
+    const avgExcess = math.mean(excessRets);
+    const sharpe = annVol === 0 ? 0 : (avgExcess * this.tradingDays) / annVol;
+    let pk = -Infinity, mdd = 0; curve.forEach(v => { if(v > pk) pk = v; const dd = (v - pk)/pk; if(dd < mdd) mdd = dd; });
+    const downsideSqSum = excessRets.reduce((acc, r) => acc + (r < 0 ? r**2 : 0), 0);
+    const downsideDevDaily = Math.sqrt(downsideSqSum / N); 
+    const downsideDevAnn = downsideDevDaily * Math.sqrt(this.tradingDays);
+    const sortino = downsideDevAnn === 0 ? 0 : (avgExcess * this.tradingDays) / downsideDevAnn;
+    const absMDD = Math.abs(mdd);
+    const calmar = absMDD === 0 ? 0 : cagr / (absMDD * 100);
+    return { cagr: cagr.toFixed(2), sharpe: sharpe.toFixed(2), mdd: (mdd * 100).toFixed(2), sortino: sortino.toFixed(2), calmar: calmar.toFixed(2), winrate: ((posDays / N) * 100).toFixed(1) };
+  }
+}
+
+/* =========================================================
+   UI CONTROLLER
+========================================================= */
+
+const UI = {
+    chartEq: null, chartDD: null, isLog: false, selectedIdx: 0,
+    sortCol: 'sharpe', sortDir: 'desc',
+    surfaceTimer: null, surfaceFrame: 100,
+    currentPage: 1, rowsPerPage: 10, filteredData: [],
+    robustData: [], robustPage: 1, robustPerPage: 6,
+
+    init(){
+        this.renderQuickAddOptions();
+        this.renderAssets(); 
+        this.switchTab('dashboard');
+        this.initTooltips();
+        const end = new Date(); const start = new Date(); start.setFullYear(end.getFullYear() - 3); 
+        document.getElementById('cfg-start').value = start.toISOString().slice(0,10);
+        document.getElementById('cfg-end').value = end.toISOString().slice(0,10);
+        this.renderHealthMonitor();
+    },
+
+    changeMarketMode(mode){
+        Engine.setMarketMode(mode);
+        const badge = document.getElementById('market-source-badge');
+        if(mode === "ETF"){
+            badge.innerText = "YAHOO (MULTI-PROXY)";
+            badge.className = "text-[9px] font-bold text-stock-500 bg-stock-500/10 px-1 rounded animate-pulse";
+        } else {
+            badge.innerText = "BINANCE LIVE API";
+            badge.className = "text-[9px] font-bold text-acc-green bg-acc-green/10 px-1 rounded animate-pulse";
+        }
+    },
+
+    renderQuickAddOptions(){
+        const sel = document.getElementById('quick-add-select');
+        if(Engine.marketMode === "ETF"){
+            sel.innerHTML = `
+            <option value="">+ Quick Add (Global Asset)</option>
+            <optgroup label="Equity Indices">
+                <option value="SPY">SPY (S&P 500)</option>
+                <option value="QQQ">QQQ (Nasdaq)</option>
+                <option value="IWM">IWM (Russell 2000)</option>
+                <option value="VT">VT (Total World)</option>
+            </optgroup>
+            <optgroup label="Fixed Income">
+                <option value="TLT">TLT (20Y Treasury)</option>
+                <option value="IEF">IEF (7-10Y Treasury)</option>
+                <option value="LQD">LQD (Inv Grade)</option>
+                <option value="HYG">HYG (High Yield)</option>
+            </optgroup>
+            <optgroup label="Commodities">
+                <option value="GLD">GLD (Gold)</option>
+                <option value="SLV">SLV (Silver)</option>
+                <option value="USO">USO (Oil)</option>
+                <option value="DBC">DBC (Commodity Index)</option>
+            </optgroup>
+            <optgroup label="Currencies & Alt">
+                <option value="UUP">UUP (USD Index)</option>
+                <option value="FXE">FXE (Euro)</option>
+                <option value="VNQ">VNQ (Real Estate)</option>
+            </optgroup>`;
+        } else {
+            sel.innerHTML = `
+            <option value="">+ Quick Add (Crypto)</option>
+            <optgroup label="DeFi">
+                <option value="UNI">UNI</option>
+                <option value="AAVE">AAVE</option>
+                <option value="MKR">MKR</option>
+            </optgroup>
+            <optgroup label="L1">
+                <option value="MATIC">MATIC</option>
+                <option value="NEAR">NEAR</option>
+                <option value="ATOM">ATOM</option>
+            </optgroup>`;
+        }
+    },
+    
+    renderHealthMonitor(){
+        const container = document.getElementById('data-health');
+        const assets = [...Engine.universe];
+        if (document.getElementById('cfg-bench').value) assets.push(document.getElementById('cfg-bench').value);
+        const uniqueAssets = [...new Set(assets)];
+
+        if(uniqueAssets.length === 0) { container.innerHTML = '<span class="text-[8px] text-gray-400 col-span-2 text-center">No assets selected</span>'; return; }
+        
+        let html = '';
+        uniqueAssets.forEach(s => {
+            const status = Engine.dataStatus[s] || { status: 'empty', days: 0 };
+            let dotClass = 'empty';
+            let text = 'Empty';
+            let textColor = 'text-gray-400';
+
+            if(status.status === 'ok') { dotClass = 'ready'; text = `${status.days}D`; textColor = 'text-brand-500 font-bold'; }
+            else if(status.status === 'error') { text = 'Error'; textColor = 'text-red-500 font-bold'; }
+            
+            html += `
+            <div class="health-item">
+                <span class="font-bold text-gray-500">${s}</span>
+                <span class="flex items-center gap-1 text-[8px] ${textColor}">
+                    ${text} <div class="status-dot ${dotClass}"></div>
+                </span>
+            </div>`;
+        });
+        container.innerHTML = html;
+    },
+    
+    setSystemStatus(state){
+        const text = document.getElementById('system-status');
+        if(!text) return;
+
+        let html = '';
+        if(state === 'idle') html = '<span class="status-dot empty" id="main-status-dot"></span> System Idle';
+        else if(state === 'loading') html = '<span class="status-dot loading" id="main-status-dot"></span> Processing...';
+        else if(state === 'ready') html = '<span class="status-dot ready" id="main-status-dot"></span> Data Ready';
+        else if(state === 'error') html = '<span class="status-dot empty bg-red-500" id="main-status-dot"></span> Error';
+        
+        text.innerHTML = html;
+    },
+    
+    enableRunButton(enable){
+        const btn = document.getElementById('btn-run');
+        if(enable){
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            btn.classList.add('animate-pulse'); 
+            setTimeout(() => btn.classList.remove('animate-pulse'), 1000);
+        } else {
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+    },
+    
+    initTooltips() {
+        const tooltip = document.getElementById('global-tooltip');
+        document.body.addEventListener('mouseover', (e) => {
+            const target = e.target.closest('.has-tooltip');
+            if (!target) return;
+            const source = target.querySelector('.tooltip-source');
+            if (source) {
+                tooltip.innerHTML = source.innerHTML;
+                tooltip.style.visibility = 'visible';
+                tooltip.style.opacity = '1';
+                this.updateTooltipPosition(e, tooltip);
+            }
+        });
+        document.body.addEventListener('mouseout', (e) => {
+            const target = e.target.closest('.has-tooltip');
+            if (target) {
+                tooltip.style.visibility = 'hidden';
+                tooltip.style.opacity = '0';
+            }
+        });
+    },
+    
+    updateTooltipPosition(e, tooltip) {
+        const target = e.target.closest('.has-tooltip');
+        if(!target) return;
+        const rect = target.getBoundingClientRect();
+        let top = rect.top - tooltip.offsetHeight - 10;
+        let left = rect.left + (rect.width / 2) - (tooltip.offsetWidth / 2);
+        
+        const bodyRect = document.body.getBoundingClientRect();
+        if (left < 10) left = 10;
+        if (left + tooltip.offsetWidth > bodyRect.width) left = bodyRect.width - tooltip.offsetWidth - 10;
+        
+        if (top < 10) top = rect.bottom + 10;
+        
+        tooltip.style.top = `${top}px`;
+        tooltip.style.left = `${left}px`;
+    },
+
+    getParams(){
+        const p = {}; ['cfg-strategy', 'cfg-weighting', 'cfg-start', 'cfg-end', 'cfg-bench', 'cfg-initial', 'cfg-dca', 'cfg-buy-fee', 'cfg-sell-fee', 'cfg-mgmt-fee'].forEach(id => { const el = document.getElementById(id); p[id.replace('cfg-','')] = el ? el.value : null; });
+        
+        const lbs = parseInt(document.getElementById('cfg-lb-start').value) || 10;
+        const lbe = parseInt(document.getElementById('cfg-lb-end').value) || 100;
+        const lbst = parseInt(document.getElementById('cfg-lb-step').value) || 10;
+        const lookbacks = []; for(let i=lbs; i<=lbe; i+=lbst) lookbacks.push(i);
+
+        const rbs = parseInt(document.getElementById('cfg-rb-start').value) || 5;
+        const rbe = parseInt(document.getElementById('cfg-rb-end').value) || 20;
+        const rbst = parseInt(document.getElementById('cfg-rb-step').value) || 5;
+        const rebals = []; for(let i=rbs; i<=rbe; i+=rbst) rebals.push(i);
+
+        return {
+            ...p, bench: (p.bench || "SPY").toUpperCase().trim(),
+            lookbacks: lookbacks, 
+            rebals: rebals,
+            rf: 3.0,
+            initial: parseFloat(p.initial || 10000),
+            dca: parseFloat(p.dca || 0),
+            buyFee: parseFloat(p['buy-fee'] || 0.1),
+            sellFee: parseFloat(p['sell-fee'] || 0.1),
+            mgmtFee: parseFloat(p['mgmt-fee'] || 0.0)
+        };
+    },
+
+    switchTab(id){
+        ['dashboard', 'docs'].forEach(v => {
+            const view = document.getElementById(`view-${v}`); const btn = document.getElementById(`btn-tab-${v}`);
+            if(view) view.classList.add('hidden'); if(btn) btn.className = "px-3 py-1 text-[10px] font-bold rounded text-gray-400 hover:text-brand-500 transition-all";
+        });
+        const tv = document.getElementById(`view-${id}`); const tb = document.getElementById(`btn-tab-${id}`);
+        if(tv) tv.classList.remove('hidden'); if(tb) tb.className = "px-3 py-1 text-[10px] font-bold rounded bg-white dark:bg-dark-800 shadow-sm text-brand-600 transition-all";
+    },
+
+    suggestAsset(s){ if(!s) return; document.getElementById('cfg-add').value = s; this.addAsset(); },
+    addAsset(){ 
+        const i = document.getElementById('cfg-add'); if(!i) return; 
+        const v = i.value.trim().toUpperCase(); 
+        if(v && !Engine.universe.includes(v)){ 
+            Engine.universe.push(v); 
+            this.renderAssets(); 
+            this.renderHealthMonitor(); 
+            this.enableRunButton(false); 
+        } 
+        i.value = ''; 
+    },
+    removeAsset(s){ 
+        Engine.universe = Engine.universe.filter(u => u !== s); 
+        this.renderAssets(); 
+        this.renderHealthMonitor();
+    },
+    renderAssets(){ const l = document.getElementById('asset-list'); if(l) l.innerHTML = Engine.universe.map(a => `<span class="bg-white dark:bg-dark-800 border dark:border-dark-700 px-1.5 py-0.5 rounded text-[9px] mono font-bold flex items-center gap-1 shadow-sm transition-transform hover:scale-105">${a} <button onclick="UI.removeAsset('${a}')" class="text-red-500 hover:text-red-700 font-bold ml-1">×</button></span>`).join(''); },
+    loading(s, t="..."){ const elT = document.getElementById('loader-text'); const elL = document.getElementById('loader'); if(elT) elT.innerText = t; if(elL) s ? elL.classList.remove('hidden') : elL.classList.add('hidden'); },
+    toggleTheme(){ document.body.classList.toggle('dark'); if(Engine.results.length) this.selectResult(this.selectedIdx); },
+    toggleLog(){ this.isLog = !this.isLog; if(Engine.results[this.selectedIdx]) this.renderEquity(Engine.results[this.selectedIdx]); },
+
+    sortBatch(col){
+        if(this.sortCol === col) this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+        else { this.sortCol = col; this.sortDir = 'desc'; }
+        this.renderBatchTable();
+    },
+
+    populateStrategyFilter(){
+        const sel = document.getElementById('f-strat');
+        if(!sel) return;
+        let html = '<option value="">All</option>';
+        Object.values(STRAT_NAMES).forEach(n => {
+            html += `<option value="${n}">${n}</option>`;
+        });
+        sel.innerHTML = html;
+    },
+
+    populateMethodFilter(){
+        const sel = document.getElementById('f-method');
+        if(!sel) return;
+        let html = '<option value="">All</option>';
+        Object.values(WEIGHT_NAMES).forEach(n => {
+            html += `<option value="${n}">${n}</option>`;
+        });
+        sel.innerHTML = html;
+    },
+
+    applyBatchFilters(){ this.currentPage = 1; this.renderBatchTable(); },
+    clearFilters(){ 
+        ['f-strat', 'f-method', 'f-lb', 'f-rb', 'f-cagr', 'f-sharpe', 'f-mdd', 'f-sortino', 'f-calmar'].forEach(id => { 
+            const el = document.getElementById(id); 
+            if(el) el.value = ''; 
+        }); 
+        this.applyBatchFilters(); 
+    },
+
+    renderBatchTable(){
+        const b = document.getElementById('batch-table-body'); 
+        if(!b || !Engine.results.length) return;
+        
+        const elStrat = document.getElementById('f-strat');
+        const elMethod = document.getElementById('f-method');
+        const elLb = document.getElementById('f-lb');
+        const elRb = document.getElementById('f-rb');
+        const elCagr = document.getElementById('f-cagr');
+        const elSharpe = document.getElementById('f-sharpe');
+        const elSortino = document.getElementById('f-sortino');
+        const elCalmar = document.getElementById('f-calmar');
+        const elMdd = document.getElementById('f-mdd');
+
+        const fs = elStrat ? elStrat.value : '';
+        const fm = elMethod ? elMethod.value : '';
+        const flb = elLb ? (parseFloat(elLb.value) || -Infinity) : -Infinity;
+        const frb = elRb ? (parseFloat(elRb.value) || -Infinity) : -Infinity;
+        const fcagr = elCagr ? (parseFloat(elCagr.value) || -Infinity) : -Infinity;
+        const fsharpe = elSharpe ? (parseFloat(elSharpe.value) || -Infinity) : -Infinity;
+        const fsortino = elSortino ? (parseFloat(elSortino.value) || -Infinity) : -Infinity;
+        const fcalmar = elCalmar ? (parseFloat(elCalmar.value) || -Infinity) : -Infinity;
+        const fmdd = elMdd ? (parseFloat(elMdd.value) || Infinity) : Infinity;
+
+        this.filteredData = Engine.results.filter(r => {
+            const matchStrat = fs === '' ? true : r.stratFull === fs;
+            const matchMethod = fm === '' ? true : r.methodFull === fm;
+            const matchLb = isFinite(flb) ? r.lb >= flb : true;
+            const matchRb = isFinite(frb) ? r.rb >= frb : true;
+            const matchCagr = isFinite(fcagr) ? parseFloat(r.cagr) >= fcagr : true;
+            const matchSharpe = isFinite(fsharpe) ? parseFloat(r.sharpe) >= fsharpe : true;
+            const matchSortino = isFinite(fsortino) ? parseFloat(r.sortino) >= fsortino : true;
+            const matchCalmar = isFinite(fcalmar) ? parseFloat(r.calmar) >= fcalmar : true;
+            
+            let matchMdd = true;
+            if (isFinite(fmdd)) {
+                matchMdd = Math.abs(parseFloat(r.mdd)) <= Math.abs(fmdd);
+            }
+
+            const isSafe = (val) => {
+                const num = parseFloat(val);
+                return !isNaN(num) && Number.isFinite(num);
+            };
+            const validData = isSafe(r.cagr) && isSafe(r.sharpe) && isSafe(r.sortino) && isSafe(r.calmar) && isSafe(r.mdd);
+
+            return matchStrat && matchMethod && matchLb && matchRb && matchCagr && matchSharpe && matchSortino && matchCalmar && matchMdd && validData;
+        });
+
+        this.filteredData.sort((a,b) => {
+            let v1 = a[this.sortCol], v2 = b[this.sortCol];
+            if(['cagr', 'sharpe', 'mdd', 'sortino', 'calmar', 'lb', 'rb'].includes(this.sortCol)){ v1 = parseFloat(v1); v2 = parseFloat(v2); }
+            if(this.sortDir === 'asc') return v1 > v2 ? 1 : -1;
+            return v1 < v2 ? 1 : -1;
+        });
+
+        const start = (this.currentPage - 1) * this.rowsPerPage;
+        const end = start + this.rowsPerPage;
+        const paginatedData = this.filteredData.slice(start, end);
+
+        document.getElementById('pagination-info').innerText = `${Math.min(start+1, this.filteredData.length)}-${Math.min(end, this.filteredData.length)} of ${this.filteredData.length}`;
+        document.getElementById('btn-prev').disabled = this.currentPage === 1;
+        document.getElementById('btn-next').disabled = end >= this.filteredData.length;
+
+        // Calculate Average
+        let sumCagr=0, cCagr=0;
+        let sumSharpe=0, cSharpe=0;
+        let sumSortino=0, cSortino=0;
+        let sumCalmar=0, cCalmar=0;
+        let sumMdd=0, cMdd=0;
+        
+        const n = this.filteredData.length; 
+        
+        if(n > 0) {
+            this.filteredData.forEach(r => {
+                const vCagr = parseFloat(r.cagr); if(Number.isFinite(vCagr)) { sumCagr += vCagr; cCagr++; }
+                const vSharpe = parseFloat(r.sharpe); if(Number.isFinite(vSharpe)) { sumSharpe += vSharpe; cSharpe++; }
+                const vSortino = parseFloat(r.sortino); if(Number.isFinite(vSortino)) { sumSortino += vSortino; cSortino++; }
+                const vCalmar = parseFloat(r.calmar); if(Number.isFinite(vCalmar)) { sumCalmar += vCalmar; cCalmar++; }
+                const vMdd = parseFloat(r.mdd); if(Number.isFinite(vMdd)) { sumMdd += vMdd; cMdd++; }
+            });
+        }
+
+        const avgHtml = n > 0 ? `
+            <tr>
+                <td class="p-3 text-left border-t-2 border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-800 font-bold text-brand-600">AVG (N=${n})</td>
+                <td class="p-3 text-center border-t-2 border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-800">-</td>
+                <td class="p-3 text-center border-t-2 border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-800">-</td>
+                <td class="p-3 text-center border-t-2 border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-800">-</td>
+                <td class="p-3 text-right border-t-2 border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-800 font-bold text-acc-green">${cCagr ? (sumCagr/cCagr).toFixed(2) : '-'}%</td>
+                <td class="p-3 text-right border-t-2 border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-800 font-bold text-stock-600">${cSharpe ? (sumSharpe/cSharpe).toFixed(2) : '-'}</td>
+                <td class="p-3 text-right border-t-2 border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-800 font-bold text-blue-500">${cSortino ? (sumSortino/cSortino).toFixed(2) : '-'}</td>
+                <td class="p-3 text-right border-t-2 border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-800 font-bold text-purple-500">${cCalmar ? (sumCalmar/cCalmar).toFixed(2) : '-'}</td>
+                <td class="p-3 text-right border-t-2 border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-800 font-bold text-acc-red">${cMdd ? (sumMdd/cMdd).toFixed(2) : '-'}%</td>
+            </tr>
+        ` : '';
+
+        const footer = document.getElementById('batch-table-foot');
+        if(footer) footer.innerHTML = avgHtml;
+
+        if(!paginatedData.length){ b.innerHTML = '<tr><td colspan="8" class="py-20 text-center text-gray-400 italic">No matches found.</td></tr>'; return; }
+        b.innerHTML = paginatedData.map((r) => {
+            const origIdx = Engine.results.findIndex(orig => orig === r);
+            return `<tr onclick="UI.selectResult(${origIdx})" class="cursor-pointer hover:bg-brand-500/10 transition-colors ${origIdx===this.selectedIdx?'bg-brand-500/15 font-bold border-l-4 border-l-brand-500':''}">
+                <td class="text-left p-3 text-dark-900 dark:text-white">${r.stratFull}</td>
+                <td class="text-left p-3 text-brand-600 dark:text-brand-400 font-bold text-[9px]">${r.methodFull}</td>
+                <td class="p-3">${r.lb}</td><td class="p-3">${r.rb}</td>
+                <td class="p-3 text-acc-green">${r.cagr}%</td><td class="p-3 text-stock-600 font-bold">${r.sharpe}</td>
+                <td class="p-3 text-acc-red">${r.mdd}%</td></tr>`;
+        }).join('');
+    },
+
+    nextPage() { if((this.currentPage * this.rowsPerPage) < this.filteredData.length) { this.currentPage++; this.renderBatchTable(); } },
+    prevPage() { if(this.currentPage > 1) { this.currentPage--; this.renderBatchTable(); } },
+
+    selectResult(idx){
+        this.selectedIdx = idx; const res = Engine.results[idx]; if(!res) return;
+        const metrics = { 'kpi-cagr': res.cagr+"%", 'kpi-sharpe': res.sharpe, 'kpi-mdd': res.mdd+"%", 'kpi-sortino': res.sortino, 'kpi-calmar': res.calmar, 'kpi-winrate': res.avgTO+"%" };
+        Object.entries(metrics).forEach(([id, v]) => { const el = document.getElementById(id); if(el) el.innerText = v; });
+        const benches = { 'bench-cagr': `Bench: ${Engine.benchStats.cagr}%`, 'bench-sharpe': `Bench: ${Engine.benchStats.sharpe}`, 'bench-mdd': `Bench: ${Engine.benchStats.mdd}%`, 'bench-sortino': `Bench: ${Engine.benchStats.sortino}`, 'bench-calmar': `Bench: ${Engine.benchStats.calmar}`, 'bench-winrate': `Bench: 100%` };
+        Object.entries(benches).forEach(([id, v]) => { const el = document.getElementById(id); if(el) el.innerText = v; });
+        document.getElementById('chart-subtitle').innerText = `${res.stratFull} | ${res.methodFull} (LB:${res.lb}, RB:${res.rb}) vs ${document.getElementById('cfg-bench').value}`;
+        this.renderEquity(res); this.renderLogs(res.logs);
+        this.renderDrawdownChart(res);
+        this.renderBatchTable(); UI.renderSurface(); UI.runMonteCarlo();
+    },
+
+    renderLogs(logs){
+        const b = document.getElementById('log-table'); if(!b) return;
+        
+        b.innerHTML = logs.slice().reverse().map(l => {
+            const exp = parseFloat(l.exposure);
+            const color = exp > 50 ? 'text-acc-green' : exp > 0 ? 'text-acc-orange' : 'text-gray-400';
+            return `
+            <tr>
+                <td class="p-3 text-gray-400 font-bold border-b dark:border-dark-700 align-top">${l.date}</td>
+                <td class="p-3 font-bold text-brand-500 border-b dark:border-dark-700 align-top">Check</td>
+                <td class="p-3 border-b dark:border-dark-700 align-top">
+                    <div class="mb-1 text-[9px] text-gray-500 font-bold uppercase">Signal</div>
+                    <div class="flex flex-wrap text-[10px]">
+                        Breadth: <span class="font-bold text-white mx-1">${l.breadth}%</span>
+                        -> Action: <span class="font-bold ${color} ml-1">${exp}% Exposure</span>
+                    </div>
+                </td>
+                <td class="p-3 border-b dark:border-dark-700 align-top text-gray-500 text-[9px] font-mono">NAV: $${l.nav.toFixed(0)}</td>
+            </tr>`;
+        }).join('');
+    },
+
+    renderEquity(res){
+        const ctx = document.getElementById('chart-equity').getContext('2d'); if(this.chartEq) this.chartEq.destroy();
+        const cfg = UI.getParams(); 
+        const bAll = Engine.allData[cfg.bench]?.prices; 
+        const sIdx = Engine.dates.findIndex(d => d === res.dates[0]);
+        let bench = [];
+        if (bAll) {
+            const benchRaw = bAll.slice(sIdx, sIdx + res.curve.length);
+            const startVal = res.curve[0];
+            bench = benchRaw.map(v => (v / benchRaw[0]) * startVal);
+        }
+
+        const grad = ctx.createLinearGradient(0, 0, 0, 400); grad.addColorStop(0, 'rgba(139, 92, 246, 0.2)'); grad.addColorStop(1, 'rgba(139, 92, 246, 0)');
+        this.chartEq = new Chart(ctx, { type: 'line', data: { labels: res.dates, datasets: [{ label: 'Breadth Strategy', data: res.curve, borderColor: '#8B5CF6', backgroundColor: grad, borderWidth: 2, fill: true, pointRadius: 0, tension: 0.1 }, { label: `Benchmark (${cfg.bench})`, data: bench, borderColor: '#64748b', borderDash: [4,4], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.1 }] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { y: { type: this.isLog ? 'logarithmic' : 'linear', grid: { color: document.body.classList.contains('dark') ? '#334155' : '#e2e8f0' }, ticks: { color: '#94a3b8' } }, x: { display: false } }, plugins: { legend: { labels: { color: document.body.classList.contains('dark') ? '#EAECEF' : '#1E2329' } }, tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleFont: { family: 'JetBrains Mono' }, bodyFont: { family: 'JetBrains Mono' }, padding: 10, cornerRadius: 8, displayColors: true } } } });
+    },
+
+    renderDrawdownChart(res){
+        const ctx = document.getElementById('chart-drawdown').getContext('2d'); if(this.chartDD) this.chartDD.destroy();
+        
+        // Show Breadth Series instead of Drawdown
+        const data = res.breadthSeries.map(v => v * 100);
+        
+        const grad = ctx.createLinearGradient(0, 0, 0, 100); grad.addColorStop(0, 'rgba(16, 185, 129, 0.4)'); grad.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+        
+        this.chartDD = new Chart(ctx, { 
+            type: 'line', 
+            data: { 
+                labels: res.dates, 
+                datasets: [{ 
+                    data: data, 
+                    borderColor: '#10B981', 
+                    backgroundColor: grad, 
+                    fill: true, 
+                    pointRadius: 0, 
+                    borderWidth: 1,
+                    label: 'Market Breadth %'
+                }] 
+            }, 
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } }, 
+                scales: { 
+                    y: { min: 0, max: 100, ticks: { display: false }, grid: { display: false } }, 
+                    x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { display: false } } 
+                } 
+            } 
+        });
+    },
+
+    initSurfaceControls(){
+        this.surfaceFrame = 100;
+        document.getElementById('surface-slider').value = 100;
+        document.getElementById('surface-date-display').innerText = "Full History";
+        this.renderSurface();
+    },
+
+    toggleSurfaceAnim(){
+        if(this.surfaceTimer) { clearInterval(this.surfaceTimer); this.surfaceTimer = null; document.getElementById('btn-play-surface').innerHTML = '<i class="fas fa-play text-[10px]"></i>'; }
+        else {
+            document.getElementById('btn-play-surface').innerHTML = '<i class="fas fa-pause text-[10px]"></i>';
+            if(this.surfaceFrame >= 100) this.surfaceFrame = 0; 
+            this.surfaceTimer = setInterval(() => {
+                this.surfaceFrame += 1; 
+                if(this.surfaceFrame > 100) {
+                    this.surfaceFrame = 100;
+                    this.renderSurface();
+                    this.toggleSurfaceAnim(); 
+                    return;
+                }
+                document.getElementById('surface-slider').value = this.surfaceFrame;
+                this.updateSurfaceFromSlider(this.surfaceFrame);
+            }, 50); 
+        }
+    },
+
+    updateSurfaceFromSlider(val){
+        this.surfaceFrame = parseInt(val);
+        this.renderSurface();
+    },
+
+    renderSurface(){
+        if(!Engine.results.length) return;
+        const currentStrat = Engine.results[this.selectedIdx].strat;
+        const filtered = Engine.results.filter(r => r.strat === currentStrat);
+        
+        const refResult = filtered[0]; 
+        if(!refResult) return;
+
+        const totalSimDays = refResult.dates.length;
+        const slicePct = Math.max(0.05, this.surfaceFrame / 100); 
+        const sliceIndex = Math.floor(Math.max(20, totalSimDays * slicePct)); 
+
+        const lbs = [...new Set(filtered.map(r => r.lb))].sort((a,b)=>a-b);
+        const rbs = [...new Set(filtered.map(r => r.rb))].sort((a,b)=>a-b);
+        
+        const metric = document.getElementById('surface-metric').value; 
+        const sdLayer = parseInt(document.getElementById('surface-sd').value);
+        
+        document.getElementById('surface-date-display').innerText = refResult.dates[sliceIndex-1] ? `Horizon: ${refResult.dates[sliceIndex-1]}` : 'Full History';
+        document.getElementById('dist-metric-label').innerText = metric;
+
+        const z = rbs.map(rb => lbs.map(lb => {
+            const m = filtered.find(r => r.lb === lb && r.rb === rb);
+            if(!m) return null;
+            
+            let val = 0;
+            const subCurve = m.curve.slice(0, sliceIndex);
+            
+            if(this.surfaceFrame === 100) {
+                if(metric === 'sharpe') val = parseFloat(m.sharpe);
+                if(metric === 'cagr') val = parseFloat(m.cagr);
+                if(metric === 'mdd') val = Math.abs(parseFloat(m.mdd));
+                if(metric === 'vol') val = parseFloat(m.avgBreadth);
+            } else {
+                if(subCurve.length < 50) return 0;
+                if(metric === 'sharpe') {
+                      const rets = []; for(let i=1; i<subCurve.length; i++) rets.push(subCurve[i]/subCurve[i-1]-1);
+                      const vol = math.std(rets) * Math.sqrt(Engine.tradingDays);
+                      const cagr = Math.pow(subCurve[subCurve.length-1]/subCurve[0], Engine.tradingDays/subCurve.length) - 1;
+                      val = vol === 0 ? 0 : (cagr - 0.02) / vol; 
+                }
+                if(metric === 'cagr') {
+                    val = (Math.pow(subCurve[subCurve.length-1]/subCurve[0], Engine.tradingDays/subCurve.length)-1) * 100;
+                }
+                if(metric === 'mdd') {
+                    let pk = -Infinity, mdd = 0; subCurve.forEach(v => { if(v>pk) pk=v; const d=(v-pk)/pk; if(d<mdd) mdd=d; });
+                    val = Math.abs(mdd) * 100;
+                }
+                if(metric === 'vol') {
+                    val = 50; 
+                }
+            }
+            return val;
+        }));
+
+        const flatZ = z.flat().filter(v => v !== null && !isNaN(v));
+        const mean = math.mean(flatZ);
+        const std = math.std(flatZ);
+
+        const data = [{
+            z: z, x: lbs, y: rbs, type: 'surface', 
+            colorscale: 'Viridis', opacity: 0.9,
+            contours: { z: { show: true, usecolormap: true, highlightcolor: "#42f5e6", project: { z: true } } },
+            colorbar: { title: metric.toUpperCase(), tickfont: { color: document.body.classList.contains('dark') ? '#EAECEF' : '#1E2329' } }
+        }];
+
+        if(sdLayer > 0){
+            for(let i=1; i<=sdLayer; i++){
+                const planeUp = rbs.map(() => lbs.map(() => mean + (std * i)));
+                const planeDown = rbs.map(() => lbs.map(() => mean - (std * i)));
+                data.push({ z: planeUp, x: lbs, y: rbs, type: 'surface', showscale: false, opacity: 0.1, colorscale: [[0, 'green'], [1, 'green']], name: `+${i}SD` });
+                data.push({ z: planeDown, x: lbs, y: rbs, type: 'surface', showscale: false, opacity: 0.1, colorscale: [[0, 'red'], [1, 'red']], name: `-${i}SD` });
+            }
+        }
+
+        const isDark = document.body.classList.contains('dark');
+        const layoutCommon = { margin: { l: 0, r: 0, b: 0, t: 0 }, paper_bgcolor: 'rgba(0,0,0,0)', font: { color: isDark ? '#EAECEF' : '#1E2329' } };
+        
+        Plotly.newPlot('viz-surface', data, {
+            ...layoutCommon,
+            scene: { 
+                xaxis: { title: 'Breadth LB (D)', color: isDark ? '#848E9C' : '#1E2329' }, 
+                yaxis: { title: 'Rebal (D)', color: isDark ? '#848E9C' : '#1E2329' }, 
+                zaxis: { title: metric.toUpperCase(), color: isDark ? '#848E9C' : '#1E2329' }, 
+                camera: { eye: {x: 1.5, y: 1.5, z: 1.2} }
+            }
+        }, { displayModeBar: false });
+
+        const distTrace = {
+            x: flatZ, type: 'histogram', histnorm: 'probability density',
+            marker: { color: 'rgba(139, 92, 246, 0.6)', line: { color: 'rgba(139, 92, 246, 1)', width: 1 } },
+            name: 'Distribution'
+        };
+        
+        const xMin = Math.min(...flatZ), xMax = Math.max(...flatZ);
+        const xRange = xMax - xMin || 1;
+        const xStep = xRange / 100;
+        const xCurve = []; const yCurve = [];
+        for(let x = xMin - xRange*0.2; x <= xMax + xRange*0.2; x += xStep) {
+            xCurve.push(x);
+            yCurve.push((1 / (std * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - mean) / std, 2)));
+        }
+        
+        const curveTrace = {
+            x: xCurve, y: yCurve, type: 'scatter', mode: 'lines',
+            line: { color: '#F6465D', width: 2 }, name: 'Normal Dist.'
+        };
+        const meanTrace = {
+            x: [mean, mean], y: [0, Math.max(...yCurve)*1.1], type: 'scatter', mode: 'lines',
+            line: { color: '#10B981', width: 2, dash: 'dot' }, name: 'Mean'
+        };
+
+        const distLayout = {
+            ...layoutCommon, margin: { l: 40, r: 10, b: 30, t: 10 },
+            xaxis: { title: metric.toUpperCase(), gridcolor: isDark ? '#334155' : '#e2e8f0', zeroline: false },
+            yaxis: { showgrid: false },
+            showlegend: false,
+            shapes: [
+                { type: 'rect', xref: 'x', yref: 'paper', x0: mean - std, x1: mean + std, y0: 0, y1: 1, fillcolor: 'rgba(16, 185, 129, 0.1)', line: { width: 0 } },
+                { type: 'rect', xref: 'x', yref: 'paper', x0: mean - 2*std, x1: mean - std, y0: 0, y1: 1, fillcolor: 'rgba(245, 158, 11, 0.1)', line: { width: 0 } },
+                { type: 'rect', xref: 'x', yref: 'paper', x0: mean + std, x1: mean + 2*std, y0: 0, y1: 1, fillcolor: 'rgba(245, 158, 11, 0.1)', line: { width: 0 } },
+                { type: 'rect', xref: 'x', yref: 'paper', x0: mean - 3*std, x1: mean - 2*std, y0: 0, y1: 1, fillcolor: 'rgba(239, 68, 68, 0.1)', line: { width: 0 } },
+                { type: 'rect', xref: 'x', yref: 'paper', x0: mean + 2*std, x1: mean + 3*std, y0: 0, y1: 1, fillcolor: 'rgba(239, 68, 68, 0.1)', line: { width: 0 } }
+            ]
+        };
+
+        Plotly.newPlot('viz-dist', [distTrace, curveTrace, meanTrace], distLayout, { displayModeBar: false });
+        
+        this.renderRobustnessTable(filtered, z, lbs, rbs, metric);
+    },
+    
+    renderRobustnessTable(filtered, zGrid, lbs, rbs, metric) {
+        const scores = [];
+        const isMinimization = ['mdd', 'vol'].includes(metric);
+
+        for (let r = 0; r < rbs.length; r++) {
+            for (let l = 0; l < lbs.length; l++) {
+                const val = zGrid[r][l];
+                if (val === null || isNaN(val)) continue;
+                
+                const RADIUS = 12; 
+                const SIGMA  = RADIUS / 2;
+                
+                let sumWeighted = 0;
+                let sumWeight   = 0;
+                
+                for (let dr = -RADIUS; dr <= RADIUS; dr++) {
+                    for (let dl = -RADIUS; dl <= RADIUS; dl++) {
+                        const rr = r + dr;
+                        const ll = l + dl;
+                        
+                        if (rr >= 0 && rr < rbs.length && ll >= 0 && ll < lbs.length) {
+                            const v = zGrid[rr][ll];
+                            if (v !== null && !isNaN(v)) {
+                                const dist2  = dr * dr + dl * dl;
+                                const weight = Math.exp(-dist2 / (2 * SIGMA * SIGMA));
+                                sumWeighted += v * weight;
+                                sumWeight   += weight;
+                            }
+                        }
+                    }
+                }
+                
+                const robustScore = sumWeight > 0 ? sumWeighted / sumWeight : null;
+                
+                // Find matching result for extra stats
+                const match = filtered.find(x => x.lb === lbs[l] && x.rb === rbs[r]);
+                const cagrVal = match ? match.cagrVal : 0;
+                const mddVal = match ? match.mddVal : 0;
+
+                scores.push({ 
+                    lb: lbs[l], rb: rbs[r], 
+                    score: robustScore, raw: val,
+                    cagr: cagrVal, mdd: mddVal
+                });
+            }
+        }
+        
+        if (isMinimization) {
+            scores.sort((a, b) => a.score - b.score); 
+        } else {
+            scores.sort((a, b) => b.score - a.score); 
+        }
+        
+        this.robustData = scores.slice(0, 20);
+        this.robustPage = 1;
+        this.renderRobustnessView();
+    },
+
+    renderRobustnessView() {
+        const tbody = document.getElementById('robustness-table-body');
+        if (!tbody) return;
+
+        const start = (this.robustPage - 1) * this.robustPerPage;
+        const end = start + this.robustPerPage;
+        const pageData = this.robustData.slice(start, end);
+        const totalPages = Math.ceil(this.robustData.length / this.robustPerPage);
+
+        tbody.innerHTML = pageData.map((s, i) => `
+            <tr class="hover:bg-brand-500/10 transition-colors cursor-pointer" onclick="alert('Configuration: Lookback ${s.lb}, Rebal ${s.rb} days')">
+                <td class="p-1 border-b dark:border-dark-700 font-bold text-center text-[9px]">${start + i + 1}</td>
+                <td class="p-1 border-b dark:border-dark-700 text-center font-mono text-stock-500 text-[9px]">${s.lb}/${s.rb}</td>
+                <td class="p-1 border-b dark:border-dark-700 text-right font-bold text-acc-orange text-[9px]">${s.score.toFixed(2)}</td>
+                <td class="p-1 border-b dark:border-dark-700 text-right text-brand-500 text-[9px]">(${s.raw.toFixed(2)})</td>
+                <td class="p-1 border-b dark:border-dark-700 text-right text-acc-green text-[9px]">${s.cagr.toFixed(1)}%</td>
+                <td class="p-1 border-b dark:border-dark-700 text-right text-acc-red text-[9px]">${s.mdd.toFixed(1)}%</td>
+            </tr>
+        `).join('');
+
+        document.getElementById('robust-page-info').innerText = `${this.robustPage} / ${totalPages}`;
+        document.getElementById('btn-robust-prev').disabled = this.robustPage === 1;
+        document.getElementById('btn-robust-next').disabled = this.robustPage >= totalPages;
+    },
+
+    nextRobustPage() {
+        const totalPages = Math.ceil(this.robustData.length / this.robustPerPage);
+        if (this.robustPage < totalPages) {
+            this.robustPage++;
+            this.renderRobustnessView();
+        }
+    },
+
+    prevRobustPage() {
+        if (this.robustPage > 1) {
+            this.robustPage--;
+            this.renderRobustnessView();
+        }
+    },
+
+    exportToCSV() {
+        if (!Engine.results.length) return alert("Run a backtest first!");
+        const res = Engine.results[this.selectedIdx];
+        let csv = "Date,PortfolioNAV,BreadthPct,ExposurePct\n";
+        res.dates.forEach((d, i) => { 
+            const nav = res.curve[i].toFixed(2); 
+            const br = (res.breadthSeries[i] * 100).toFixed(1);
+            csv += `${d},${nav},${br}%\n`; 
+        });
+        const blob = new Blob([csv], { type: 'text/csv' }); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.setAttribute('hidden', ''); a.setAttribute('href', url); a.setAttribute('download', `Breadth_${res.strat}_Backtest.csv`); document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    },
+    
+    runMonteCarlo(){
+        const res = Engine.results[this.selectedIdx]; if(!res) return;
+        const years = parseInt(document.getElementById('cfg-mc-years').value) || 1;
+        const days = years * Engine.tradingDays; 
+        const rets = []; for(let i=1; i<res.curve.length; i++) rets.push(res.curve[i]/res.curve[i-1]-1);
+        const mu = math.mean(rets), sig = math.std(rets); const paths = [];
+        let sumSharpe = 0, sumCAGR = 0, sumMDD = 0, sumVol = 0; const rfDaily = (0.02)/Engine.tradingDays;
+        
+        for(let s=0; s<50; s++){ 
+            let cur = res.curve[res.curve.length-1], p = [cur], simRets = [], pk = -Infinity, mdd = 0;
+            for(let d=0; d<days; d++){ 
+                const u1 = Math.random(), u2 = Math.random(); const z = Math.sqrt(-2.0 * Math.log(u1 || 1e-9)) * Math.cos(2.0 * Math.PI * (u2 || 1e-9)); const nextVal = cur * Math.exp((mu - 0.5 * sig**2) + sig * z);
+                if(nextVal > pk) pk = nextVal; const dd = (nextVal - pk)/pk; if(dd < mdd) mdd = dd;
+                simRets.push(nextVal/cur - 1); cur = nextVal; p.push(cur); 
+            } 
+            paths.push(p); 
+            const simVol = math.std(simRets) * Math.sqrt(Engine.tradingDays);
+            const simTotalRet = p[p.length-1]/p[0];
+            const simCAGR = (Math.pow(simTotalRet, 1/years) - 1);
+            const simExcess = math.mean(simRets.map(r => r - rfDaily));
+            const simSharpe = simVol === 0 ? 0 : (simExcess * Engine.tradingDays) / simVol;
+            sumVol += simVol; sumCAGR += simCAGR; sumMDD += mdd; sumSharpe += simSharpe;
+        }
+        document.getElementById('mc-avg-sharpe').innerText = (sumSharpe/50).toFixed(2);
+        document.getElementById('mc-avg-cagr').innerText = ((sumCAGR/50)*100).toFixed(1) + "%";
+        document.getElementById('mc-avg-vol').innerText = res.avgBreadth + "%"; // Show Avg Breadth instead of Vol
+        document.getElementById('mc-avg-mdd').innerText = ((sumMDD/50)*100).toFixed(1) + "%";
+        Plotly.newPlot('viz-monte-dashboard', paths.map(p => ({ y: p, type: 'scatter', mode: 'lines', line: { width: 1, color: 'rgba(139, 92, 246, 0.2)' }, showlegend: false })), { margin: { l: 40, r: 10, b: 30, t: 10 }, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { color: document.body.classList.contains('dark') ? '#EAECEF' : '#1E2329' }, xaxis: { title: 'Projection Days' } }, { displayModeBar: false });
+    }
+};
+
+const Engine = new QuantEngine();
+window.onload = () => UI.init();
+</script>
+</body>
+</html>
