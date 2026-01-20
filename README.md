@@ -1,40 +1,47 @@
-**Market Breadth Strategy Engine v2.1** is a fully client-side quantitative research tool designed to analyze **market breadth**, **regime conditions**, and **strategy robustness** across global assets.
+# 🌍 Market Breadth Strategy Engine v2.1  
+**Global Multi-Asset Quantitative Research Platform (Pure Frontend)**
 
-It allows users to:
-- Fetch real market data (ETF / Crypto)
-- Compute multiple breadth definitions
-- Execute multiple trading strategies
-- Run parameter grid backtests
-- Analyze robustness via 4D surfaces
-- Evaluate risk-adjusted performance
-- Run Monte Carlo forward simulations
+---
 
-> ⚠️ **No backend, no build process, no database.**  
-> Runs entirely in the browser using public APIs.
+## 👤 Author
+**GitHub:** waranyutrkm  
+**Project Type:** Quantitative Research & Strategy Prototyping  
+**Architecture:** 100% Client-Side (No Backend)
 
 ---
 
 ## 🚀 Live Demo
 
-```
-
-[https://waranyutrkm.github.io/market-breadth-engine/](https://waranyutrkm.github.io/market-breadth-engine/)
-
-```
-
-(Replace `USERNAME` with your GitHub username)
+👉 https://waranyutrkm.github.io/market-breadth-engine/
 
 ---
 
-## 🧱 Tech Stack
+## 📌 Project Overview
+
+**Market Breadth Strategy Engine v2.1** is a fully browser-based quantitative research tool designed to analyze **market breadth**, **market regimes**, and **strategy robustness** across global assets.
+
+The engine allows researchers and traders to:
+- Measure market participation (breadth)
+- Detect regime shifts
+- Test multiple systematic strategies
+- Perform parameter grid search
+- Evaluate robustness (not just peak performance)
+- Simulate forward uncertainty via Monte Carlo
+
+> ⚠️ This project is designed for **research and educational purposes**.  
+> It is not a trading bot and does not place real trades.
+
+---
+
+## 🧱 Technology Stack
 
 - **HTML5 / Vanilla JavaScript**
 - **TailwindCSS (CDN)**
 - **Chart.js** – Equity & Breadth Charts
-- **Plotly.js** – 3D Surface & Distribution
+- **Plotly.js** – 3D Surface, Distribution, Monte Carlo
 - **Math.js** – Statistical Calculations
-- **Yahoo Finance API (via CORS proxies)**
-- **Binance API (Crypto)**
+- **Yahoo Finance API** (ETF / Macro Assets via CORS Proxy)
+- **Binance REST API** (Crypto Assets)
 
 ---
 
@@ -44,61 +51,69 @@ It allows users to:
 
 market-breadth-engine/
 │
-├── index.html        # Entire application (UI + Engine)
-└── README.md         # Documentation
+├── index.html     # Entire application (UI + Quant Engine)
+└── README.md      # Documentation
 
 ```
 
----
-
-## 🔁 Step-by-Step Application Workflow
+No build system, no Node.js, no server required.
 
 ---
 
-### STEP 1 — Asset Universe Selection
+## 🔁 Full Workflow (Step-by-Step)
 
-The universe defines **what assets are used to calculate market breadth**.
+---
 
-#### Available Modes
-- **ETF Mode**
-  - SPY, QQQ, IWM, VT, TLT, GLD, etc.
-  - Trading Days = **252**
-- **Crypto Mode**
-  - BTC, ETH, SOL, etc.
-  - Trading Days = **365**
+## STEP 1 — Asset Universe Definition
+
+The **asset universe** defines which instruments are used to compute market breadth.
+
+### Supported Market Modes
+
+### 1️⃣ ETF / Global Macro Mode
+- Equities: SPY, QQQ, IWM, VT
+- Fixed Income: TLT, IEF, LQD, HYG
+- Commodities: GLD, SLV, USO, DBC
+- Alternatives: VNQ, UUP  
+- **Trading Days / Year:** 252
+
+### 2️⃣ Crypto Mode
+- BTC, ETH, SOL, BNB, etc.
+- **Trading Days / Year:** 365
 
 Users may:
-- Use predefined universe
-- Manually add/remove tickers
-- Set a **benchmark asset** (default: SPY / BTC)
+- Add or remove assets manually
+- Choose a benchmark asset (default: SPY / BTC)
 
 ---
 
-### STEP 2 — Data Fetching
+## STEP 2 — Market Data Fetching
 
 Each asset is fetched independently.
 
-#### ETF Data Source
-- Yahoo Finance `chart` endpoint (daily OHLCV)
-- Uses **multiple CORS proxies** for reliability
+### ETF Data
+- Source: Yahoo Finance `chart` API
+- Interval: Daily
+- Range: ~5 years
+- CORS handled via multiple fallback proxies
 
-#### Crypto Data Source
-- Binance REST API (`/api/v3/klines`)
+### Crypto Data
+- Source: Binance `/api/v3/klines`
+- Interval: 1 day
 
-#### Data Normalization
-All assets are aligned to a **common date index**:
-- Missing dates → forward-filled
-- Ensures synchronized time series
+### Data Alignment
+All assets are synchronized to a **common date index**:
+- Missing data → forward-filled
+- Ensures consistent cross-asset calculations
 
 ---
 
-## 📊 STEP 3 — Market Breadth Calculation
+## STEP 3 — Market Breadth Calculation
 
-Market breadth measures **how many assets are bullish** under a chosen rule.
+Market breadth measures **how many assets are participating in an uptrend**.
 
 Let:
-- `P(t)` = Price today
-- `P(t-LB)` = Price at lookback
+- `P(t)` = Price at time `t`
 - `LB` = Lookback period (days)
 
 An asset is **bullish** if:
@@ -111,24 +126,24 @@ P(t) > P(t - LB)
 
 ---
 
-### Breadth Weighting Methods
+## STEP 4 — Breadth Weighting Methods
 
 ---
 
-### 1️⃣ Equal Weight (Count)
+### 1️⃣ Equal Weight (Count-Based)
 
 Counts how many assets are bullish.
 
-#### Formula
+**Formula**
 ```
 
-Breadth = (# of bullish assets) / (total assets)
+Breadth = Number of Bullish Assets / Total Assets
 
 ```
 
-#### Example
-- Universe: 5 assets  
-- Bullish: 3
+**Example**
+- 5 assets
+- 3 are bullish
 
 ```
 
@@ -142,16 +157,17 @@ Breadth = 3 / 5 = 0.60 (60%)
 
 Weights bullish assets by trading volume.
 
-#### Formula
+**Formula**
 ```
 
-Breadth = Σ(Volume of bullish assets) / Σ(Total volume)
+Breadth = Σ(Volume of Bullish Assets) / Σ(Total Volume)
 
 ```
 
-#### Example
+**Example**
+
 | Asset | Trend | Volume |
-|------|------|-------|
+|------|------|--------|
 | A | Up | 100 |
 | B | Down | 500 |
 
@@ -161,13 +177,15 @@ Breadth = 100 / (100 + 500) = 0.167 (16.7%)
 
 ```
 
+Interpretation: Large assets selling can dominate the market.
+
 ---
 
-### 3️⃣ Trend Momentum (ROC)
+### 3️⃣ Trend Momentum (ROC Weighted)
 
-Uses **Rate of Change** as weight.
+Uses **Rate of Change (ROC)** as weight.
 
-#### Formula
+**Formula**
 ```
 
 ROC = (P(t) - P(t-LB)) / P(t-LB)
@@ -175,7 +193,8 @@ Breadth = Σ(Positive ROC) / Σ(|ROC|)
 
 ```
 
-#### Example
+**Example**
+
 | Asset | ROC |
 |------|----|
 | A | +10% |
@@ -192,28 +211,29 @@ Breadth = 15 / 17 = 0.88 (88%)
 
 ---
 
-### 4️⃣ Inverse Volatility
+### 4️⃣ Inverse Volatility (Risk-Adjusted)
 
-Rewards **stable upward trends**.
+Rewards **stable trends** over volatile ones.
 
-#### Volatility
+**Volatility**
 ```
 
-σ = StdDev(daily returns over 20 days)
+σ = StdDev(daily returns over N days)
 Weight = 1 / σ
 
 ```
 
-#### Formula
+**Breadth Formula**
 ```
 
-Breadth = Σ(Weight of bullish assets) / Σ(All weights)
+Breadth = Σ(Weight of Bullish Assets) / Σ(All Weights)
 
 ```
 
-#### Example
-| Asset | Vol | Weight |
-|------|----|-------|
+**Example**
+
+| Asset | Volatility | Weight |
+|------|-----------|--------|
 | A | 10% | 0.10 |
 | B | 50% | 0.02 |
 
@@ -225,15 +245,14 @@ Breadth = 0.10 / (0.10 + 0.02) = 83%
 
 ---
 
-## ♟ STEP 4 — Strategy Execution Logic
+## STEP 5 — Strategy Execution Logic
 
 Let:
-- `B` = Breadth Score (0 → 1)
+- `B` = Breadth score (0 → 1)
 
 ---
 
 ### 1️⃣ Breadth Switch
-
 ```
 
 If B > 0.5 → 100% Invested
@@ -244,7 +263,6 @@ Else → 100% Cash
 ---
 
 ### 2️⃣ Breadth Scale
-
 ```
 
 Exposure = B
@@ -252,19 +270,17 @@ Exposure = B
 ```
 
 Example:
-- Breadth = 70% → 70% Asset / 30% Cash
+- Breadth = 70% → 70% invested
 
 ---
 
 ### 3️⃣ Breadth Alpha
-
-- Invest **only in bullish assets**
+- Invest only in bullish assets
 - Equal-weight among bullish assets
 
 ---
 
 ### 4️⃣ Breadth Regime
-
 ```
 
 B > 0.6 → 100%
@@ -276,109 +292,98 @@ B < 0.4 → 0%
 ---
 
 ### 5️⃣ Breadth Contrarian
-
 ```
 
-If B < 0.2 → Buy (Panic)
-Else → Cash
+If B < 0.2 → Buy (Panic Condition)
+Else → Stay in Cash
 
 ```
 
 ---
 
-## 💰 STEP 5 — Portfolio Simulation
+## STEP 6 — Portfolio Simulation Engine
 
 ---
 
-### Portfolio Variables
-- Initial Capital
-- Shares per asset
+### Portfolio State Variables
 - Cash balance
-- Daily NAV
+- Asset shares
+- Net Asset Value (NAV)
 
 ---
 
 ### Transaction Fees
-- Buy Fee (%)
-- Sell Fee (%)
 
-#### Buy Cost
+**Buy**
 ```
 
 Total Cost = BuyAmount × (1 + BuyFee)
 
 ```
 
-#### Sell Proceeds
+**Sell**
 ```
 
-Cash = SellAmount × (1 - SellFee)
+Cash Received = SellAmount × (1 - SellFee)
 
 ```
 
 ---
 
-### Management Fee (Annual)
+### Management Fee
 
-Converted to **daily fee**:
+Annual fee converted to daily:
 
 ```
 
-DailyFee = (AnnualFee / 100) / TradingDays
+DailyFee = AnnualFee / TradingDays
 DailyFeeAmount = NAV × DailyFee
 
 ```
 
 ---
 
-## 📈 STEP 6 — Performance Metrics
+## STEP 7 — Performance Metrics
 
 ---
 
 ### CAGR
-
 ```
 
-CAGR = (Final / Initial)^(1 / Years) - 1
+CAGR = (Final NAV / Initial NAV)^(1 / Years) - 1
 
 ```
 
 ---
 
 ### Sharpe Ratio
-
 ```
 
-Sharpe = (Mean(Return - RF)) / StdDev(Return) × √TradingDays
+Sharpe = Mean(Return − RiskFreeRate) / StdDev(Return) × √TradingDays
 
 ```
 
 ---
 
 ### Sortino Ratio
-
-Uses **downside deviation only**.
-
 ```
 
-Sortino = (Mean(Return - RF)) / DownsideDev × √TradingDays
+Sortino = Mean(Return − RF) / DownsideDeviation × √TradingDays
 
 ```
 
 ---
 
-### Max Drawdown (MDD)
-
+### Maximum Drawdown (MDD)
 ```
 
-MDD = Min((NAV - PeakNAV) / PeakNAV)
+MDD = min((NAV − PeakNAV) / PeakNAV)
 
 ```
 
 ---
 
 ### Calmar Ratio
-
 ```
 
 Calmar = CAGR / |MDD|
@@ -387,63 +392,58 @@ Calmar = CAGR / |MDD|
 
 ---
 
-## 🔬 STEP 7 — Parameter Grid Search
+## STEP 8 — Parameter Grid Search
 
-Loops through:
-- Lookback (LB)
-- Rebalance Frequency (RB)
-- Strategy
-- Weighting Method
+The engine iterates over:
+- Lookback periods (LB)
+- Rebalance frequencies (RB)
+- Strategies
+- Weighting methods
 
-Produces **Strategy Matrix Table** with:
-- CAGR
-- Sharpe
-- MDD
-- Sortino
-- Calmar
+Results are stored in a **Strategy Matrix Table**.
 
 ---
 
-## 🌐 STEP 8 — 4D Robustness Surface
+## STEP 9 — 4D Robustness Surface
 
-Axes:
+Dimensions:
 - X → Lookback
 - Y → Rebalance
 - Z → Performance Metric
 - Time → Rolling Horizon
 
 Includes:
-- Mean ± 1σ / 2σ planes
-- Sensitivity visualization
-- Stability analysis
+- Mean
+- ±1σ and ±2σ stability planes
+
+Purpose: **Identify stable regions, not sharp peaks**.
 
 ---
 
-## 🛡 STEP 9 — Robustness Scoring (Cluster Stability)
+## STEP 10 — Robustness Scoring (Cluster Stability)
 
 Each parameter point is scored using **Gaussian neighborhood smoothing**.
 
-#### Formula
+**Formula**
 ```
 
-Score = Σ(value × weight) / Σ(weight)
-weight = exp(-distance² / (2σ²))
+Score = Σ(Value × Weight) / Σ(Weight)
+Weight = exp(−distance² / (2σ²))
 
 ```
 
-Rewards **stable parameter regions**, not sharp peaks.
+Stable clusters score higher than isolated optima.
 
 ---
 
-## 🎲 STEP 10 — Monte Carlo Simulation
+## STEP 11 — Monte Carlo Simulation
 
-- Uses log-normal process
-- Based on empirical μ and σ
+Uses log-normal price dynamics.
 
-#### Price Path
+**Price Path**
 ```
 
-P(t+1) = P(t) × exp((μ - 0.5σ²) + σZ)
+P(t+1) = P(t) × exp((μ − 0.5σ²) + σZ)
 
 ```
 
@@ -453,49 +453,43 @@ Where:
 Outputs:
 - Expected CAGR
 - Expected Sharpe
-- Expected MDD
-- Path dispersion
+- Expected Drawdown
+- Distribution of future paths
 
 ---
 
-## 📤 STEP 11 — CSV Export
+## STEP 12 — CSV Export
 
 Exports:
 ```
 
-Date, NAV, Breadth %, Exposure %
+Date, Portfolio NAV, Breadth %, Exposure %
 
 ```
 
-For further analysis in Python / Excel / R.
+For further analysis in Python, R, or Excel.
 
 ---
 
 ## ⚠️ Disclaimer
 
-This software is for **educational and research purposes only**.  
-It does **not** constitute financial advice or investment recommendations.
+This software is provided **for educational and research purposes only**.  
+It does not constitute financial advice or investment recommendations.
 
 Market data may be delayed or incomplete.  
 Use at your own risk.
 
 ---
 
-## ✅ License
+## 📜 License
 
 MIT License — free to use, modify, and distribute.
 
 ---
 
-## 🧠 Author Notes
+## 🧠 Design Philosophy
 
-Designed for:
-- Quant researchers
-- Systematic traders
-- Market regime analysis
-- Portfolio risk diagnostics
-
-Pure frontend by design — **transparent, inspectable, reproducible**.
-
----
-```
+- Transparency over black-box models
+- Robustness over overfitting
+- Regime awareness over static assumptions
+- Research-first, execution-agnostic
