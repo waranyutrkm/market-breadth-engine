@@ -18,7 +18,7 @@ It allows users to:
 
 ```
 
-[https://USERNAME.github.io/market-breadth-engine/](https://USERNAME.github.io/market-breadth-engine/)
+[https://waranyutrkm.github.io/market-breadth-engine/](https://waranyutrkm.github.io/market-breadth-engine/)
 
 ```
 
